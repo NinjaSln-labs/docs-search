@@ -7,3 +7,7 @@ audit-report/
 .pytest_cache/
 .ruff_cache/
 src/docs_search.egg-info/
+
+# 交接文档：跨 session 的工程 delta，仅本地维护不入库
+HANDOFF.md
+HANDOFF-ARCHIVE/
