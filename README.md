@@ -73,11 +73,22 @@ curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" \
 
 上传的文件存入 `<文档目录>/uploads/` 并自动进入索引；同名自动加 `-1`、`-2` 后缀。
 
-## 安全说明
+## 安全说明 / Security
 
 - 服务默认仅监听 `127.0.0.1`，**请勿用 `--host 0.0.0.0` 暴露到公网**（接口无鉴权）
 - 上传仅接受 `.md` 文件、单文件 ≤ 10MB、文件名经过消毒（防路径穿越）
 - 删除接口仅允许操作 `uploads/` 目录内的文件
+
+## 开发 / Development
+
+```bash
+pip install -e . pytest ruff   # 可编辑安装 + 开发工具链
+python -m pytest               # 41 用例（单元 + CLI E2E + Web API）
+ruff check src/ tests/ scripts/  # lint
+git config core.hooksPath .githooks  # 启用 pre-commit 验证链
+```
+
+工程结构见 [DEVELOPMENT.md](DEVELOPMENT.md)，贡献规范见 [CONTRIBUTING.md](CONTRIBUTING.md)，AI 协作纪律见 [AGENTS.md](AGENTS.md)。English docs: [README.en.md](README.en.md)
 
 ## 许可证 / License
 

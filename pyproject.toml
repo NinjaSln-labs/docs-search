@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docs-search"
+version = "1.0.0"
+description = "Zero-dependency local document search engine — SQLite index, millisecond retrieval, CLI + Web UI with upload"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+authors = [{ name = "ninjasin-labs" }]
+keywords = ["search", "sqlite", "markdown", "docs", "cli"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Indexing",
+]
+# 运行时零依赖（卖点）：不声明任何 install_requires
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/ninjasln-labs/docs-search"
+Repository = "https://github.com/ninjasln-labs/docs-search"
+Issues = "https://github.com/ninjasln-labs/docs-search/issues"
+
+[project.scripts]
+docs-search = "docs_search.cli:main"
+docs-search-web = "docs_search.web:main"
+
+[project.optional-dependencies]
+test = ["pytest>=8", "ruff>=0.6"]
+
+[dependency-groups]
+test = ["pytest>=8", "ruff>=0.6"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+packages = ["docs_search"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+exclude = ["audit-report"]

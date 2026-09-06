@@ -1,35 +1,36 @@
-# -*- coding: utf-8 -*-
-"""docs_search_core: docs-search 共享核心模块（CLI 与 Web 共用，零第三方依赖）
+"""docs_search.core: docs-search 共享核心模块（CLI 与 Web 共用，零第三方依赖）
 
 路径解析规则（不绑定任何本地/个人路径）:
   文档目录:  --dir 参数 > 环境变量 DOCS_SEARCH_DIR > ./docs（当前工作目录下）
   索引库:    --db 参数 > 环境变量 DOCS_SEARCH_DB > ~/.docs-search/<目录哈希>/index.db
              按文档目录哈希隔离，多个文档库可并存互不干扰。
 """
-import os
-import sys
-import json
-import time
-import sqlite3
-import hashlib
-from pathlib import Path
-from datetime import datetime
 
-ENV_DOCS_DIR = 'DOCS_SEARCH_DIR'
-ENV_DB_PATH = 'DOCS_SEARCH_DB'
-DEFAULT_DOCS_DIRNAME = 'docs'
+import hashlib
+import json
+import os
+import sqlite3
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+ENV_DOCS_DIR = "DOCS_SEARCH_DIR"
+ENV_DB_PATH = "DOCS_SEARCH_DB"
+DEFAULT_DOCS_DIRNAME = "docs"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 上传体积上限 10MB
 
 
 def win_utf8():
     """Windows 控制台 GBK 兼容: 强制 UTF-8 输出"""
-    if sys.platform == 'win32':
-        os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+    if sys.platform == "win32":
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
         import io
+
         try:
-            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-        except Exception:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001, S110 -- 控制台包装失败时静默降级
             pass
 
 
@@ -50,12 +51,12 @@ def resolve_db_path(docs_dir, explicit=None):
         return Path(explicit).expanduser().resolve()
     if os.environ.get(ENV_DB_PATH):
         return Path(os.environ[ENV_DB_PATH]).expanduser().resolve()
-    key = hashlib.sha1(str(docs_dir).replace('\\', '/').lower().encode('utf-8')).hexdigest()[:12]
-    return Path.home() / '.docs-search' / key / 'index.db'
+    key = hashlib.sha1(str(docs_dir).replace("\\", "/").lower().encode("utf-8")).hexdigest()[:12]
+    return Path.home() / ".docs-search" / key / "index.db"
 
 
 def meta_path(db_path):
-    return db_path.with_name('index.meta.json')
+    return db_path.with_name("index.meta.json")
 
 
 # ============================================================
@@ -68,13 +69,13 @@ def scan_meta(docs_dir):
         return out
     for root, _, files in os.walk(docs_dir):
         for f in files:
-            if not f.lower().endswith('.md'):
+            if not f.lower().endswith(".md"):
                 continue
             p = Path(root) / f
-            rel = str(p.relative_to(docs_dir)).replace('\\', '/')
+            rel = str(p.relative_to(docs_dir)).replace("\\", "/")
             try:
                 st = p.stat()
-                out.append((rel, st.st_size, int(st.st_mtime), rel.split('/')[0]))
+                out.append((rel, st.st_size, int(st.st_mtime), rel.split("/")[0]))
             except OSError:
                 pass
     return out
@@ -87,18 +88,21 @@ def scan_docs(docs_dir):
         return out
     for root, _, files in os.walk(docs_dir):
         for f in files:
-            if not f.lower().endswith('.md'):
+            if not f.lower().endswith(".md"):
                 continue
             p = Path(root) / f
-            rel = str(p.relative_to(docs_dir)).replace('\\', '/')
+            rel = str(p.relative_to(docs_dir)).replace("\\", "/")
             try:
-                txt = p.read_text(encoding='utf-8')
-                lines = txt.split('\n')
-                title = next((l[2:].strip() for l in lines if l.startswith('# ')), f)
-                bs = next((i for i, l in enumerate(lines) if l and not l.startswith('#') and not l.startswith('>')), len(lines))
-                body = '\n'.join(lines[bs:]).strip()
+                txt = p.read_text(encoding="utf-8")
+                lines = txt.split("\n")
+                title = next((l[2:].strip() for l in lines if l.startswith("# ")), f)
+                bs = next(
+                    (i for i, l in enumerate(lines) if l and not l.startswith("#") and not l.startswith(">")),
+                    len(lines),
+                )
+                body = "\n".join(lines[bs:]).strip()
                 st = p.stat()
-                out.append((rel, rel.split('/')[0], title, body, st.st_size, int(st.st_mtime)))
+                out.append((rel, rel.split("/")[0], title, body, st.st_size, int(st.st_mtime)))
             except (OSError, UnicodeDecodeError):
                 pass  # 跳过不可读/非 UTF-8 文件
     return out
@@ -108,7 +112,7 @@ def files_hash(entries):
     """按 (rel, mtime, size) 计算目录指纹，不读内容"""
     h = hashlib.sha256()
     for rel, size, mtime, _cat in sorted(entries, key=lambda x: x[0]):
-        h.update(f"{rel}:{mtime}:{size}".encode('utf-8'))
+        h.update(f"{rel}:{mtime}:{size}".encode())
     return h.hexdigest()[:16]
 
 
@@ -116,10 +120,10 @@ def build_db(db_path):
     """重建数据库表（幂等：DROP IF EXISTS，不依赖删除文件，DB 被占用时也能重建）"""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(str(db_path))
-    c.execute('DROP TABLE IF EXISTS docs')
-    c.execute('CREATE TABLE docs(path TEXT PRIMARY KEY, cat TEXT, title TEXT, body TEXT, size INT, mtime INT)')
-    c.execute('CREATE INDEX idx_cat ON docs(cat)')
-    c.execute('CREATE INDEX idx_title ON docs(title)')
+    c.execute("DROP TABLE IF EXISTS docs")
+    c.execute("CREATE TABLE docs(path TEXT PRIMARY KEY, cat TEXT, title TEXT, body TEXT, size INT, mtime INT)")
+    c.execute("CREATE INDEX idx_cat ON docs(cat)")
+    c.execute("CREATE INDEX idx_title ON docs(title)")
     c.commit()
     return c
 
@@ -127,19 +131,19 @@ def build_db(db_path):
 def get_conn(db_path):
     db_path.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(str(db_path))
-    c.execute('SELECT 1')
+    c.execute("SELECT 1")
     return c
 
 
 def load_meta(db_path):
     try:
-        return json.loads(meta_path(db_path).read_text(encoding='utf-8'))
-    except Exception:
+        return json.loads(meta_path(db_path).read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 -- 元数据损坏时按无元数据处理
         return {}
 
 
 def save_meta(db_path, meta):
-    meta_path(db_path).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
+    meta_path(db_path).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def need_reindex(meta, db_path, docs_dir):
@@ -148,7 +152,7 @@ def need_reindex(meta, db_path, docs_dir):
         return True
     if not db_path.exists():
         return True
-    return files_hash(scan_meta(docs_dir)) != meta.get('hash', '')
+    return files_hash(scan_meta(docs_dir)) != meta.get("hash", "")
 
 
 def rebuild_index(docs_dir, db_path):
@@ -157,15 +161,16 @@ def rebuild_index(docs_dir, db_path):
     try:
         files = scan_docs(docs_dir)
         c = build_db(db_path)
-        c.executemany('INSERT INTO docs VALUES(?,?,?,?,?,?)', files)
+        c.executemany("INSERT INTO docs VALUES(?,?,?,?,?,?)", files)
         c.commit()
         c.close()
     except sqlite3.OperationalError as e:
-        raise RuntimeError(
-            f'索引库被占用，无法重建（是否有其他 docs-search 进程正在使用？）: {e}'
-        ) from e
-    meta = {'hash': files_hash(scan_meta(docs_dir)), 'count': len(files),
-            'updated': datetime.now().isoformat()}
+        raise RuntimeError(f"索引库被占用，无法重建（是否有其他 docs-search 进程正在使用？）: {e}") from e
+    meta = {
+        "hash": files_hash(scan_meta(docs_dir)),
+        "count": len(files),
+        "updated": datetime.now().astimezone().isoformat(),
+    }
     save_meta(db_path, meta)
     return len(files), (time.time() - t0) * 1000
 
@@ -176,7 +181,7 @@ def ensure_index(docs_dir, db_path):
     if need_reindex(meta, db_path, docs_dir):
         n, _ = rebuild_index(docs_dir, db_path)
         return n, True
-    return meta.get('count', 0), False
+    return meta.get("count", 0), False
 
 
 # ============================================================
@@ -185,25 +190,26 @@ def ensure_index(docs_dir, db_path):
 def sanitize_filename(name):
     """清洗上传文件名: 仅保留basename、去除危险字符、必须 .md 结尾。非法返回 None"""
     import re
-    name = (name or '').strip()
-    name = name.replace('\\', '/')
-    name = name.split('/')[-1]  # 仅取 basename，防路径穿越
-    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', name).strip('. ')
-    if not name or not name.lower().endswith('.md') or len(name) > 200:
+
+    name = (name or "").strip()
+    name = name.replace("\\", "/")
+    name = name.split("/")[-1]  # 仅取 basename，防路径穿越
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip(". ")
+    if not name or not name.lower().endswith(".md") or len(name) > 200:
         return None
     return name
 
 
 def dedupe_target(docs_dir, name):
     """在 docs_dir/uploads/ 下生成不重名的目标路径"""
-    updir = docs_dir / 'uploads'
+    updir = docs_dir / "uploads"
     updir.mkdir(parents=True, exist_ok=True)
     target = updir / name
     if not target.exists():
         return target
     stem, ext = os.path.splitext(name)
     for i in range(1, 1000):
-        cand = updir / f'{stem}-{i}{ext}'
+        cand = updir / f"{stem}-{i}{ext}"
         if not cand.exists():
             return cand
     return None

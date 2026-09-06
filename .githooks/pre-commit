@@ -1,0 +1,7 @@
+#!/bin/sh
+# docs-search pre-commit 钩子 — 验证链全绿才可提交
+# 启用: git config core.hooksPath .githooks
+echo "[pre-commit] 验证链: ruff check + pytest"
+ruff check src/ tests/ scripts/ || exit 1
+python -m pytest || exit 1
+echo "[pre-commit] 全绿 ✓"

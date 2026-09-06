@@ -3,3 +3,6 @@ __pycache__/
 # 索引库已迁移到 ~/.docs-search/，不再放在项目根
 *.db
 *.meta.json
+audit-report/
+.pytest_cache/
+.ruff_cache/
