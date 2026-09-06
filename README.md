@@ -6,7 +6,7 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 
 ## 特性 / Features
 
-- **零依赖** — 纯 Python 标准库（3.8+），无需 pip install
+- **零依赖** — 纯 Python 标准库（3.10+），无需 pip install
 - **快** — SQLite FTS 索引，检索 < 50ms
 - **自动索引** — 搜索前自动检测文件变更并增量重建
 - **Web UI** — 内置搜索界面 + 拖拽上传 .md 文档
@@ -82,8 +82,8 @@ curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" \
 ## 开发 / Development
 
 ```bash
-pip install -e . pytest ruff   # 可编辑安装 + 开发工具链
-python -m pytest               # 41 用例（单元 + CLI E2E + Web API）
+pip install -r requirements.lock -e .   # 可编辑安装 + 锁定的开发工具链
+python scripts/verify.py        # 验证链单源：ruff + pytest（单元 + CLI E2E + Web API）
 ruff check src/ tests/ scripts/  # lint
 git config core.hooksPath .githooks  # 启用 pre-commit 验证链
 ```

@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "Zero-dependency local document search engine — SQLite index, millisecond retrieval, CLI + Web UI with upload"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 authors = [{ name = "ninjasin-labs" }]
 keywords = ["search", "sqlite", "markdown", "docs", "cli"]
 classifiers = [
@@ -19,8 +19,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -55,5 +53,5 @@ addopts = "-q"
 
 [tool.ruff]
 line-length = 120
-target-version = "py38"
+target-version = "py310"
 exclude = ["audit-report"]

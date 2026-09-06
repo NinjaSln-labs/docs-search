@@ -6,7 +6,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 
 ## Features
 
-- **Zero dependencies** — Python stdlib only (3.8+), no pip install required to run
+- **Zero dependencies** — Python stdlib only (3.10+), no pip install required to run
 - **Fast** — SQLite index, retrieval < 50ms
 - **Auto re-index** — detects file changes before every search
 - **Web UI** — built-in search page with drag-and-drop `.md` upload

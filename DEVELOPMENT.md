@@ -15,8 +15,8 @@ tests/        # pytest：单元 + CLI E2E（子进程）+ Web API（内存 HTTP�
 
 ```bash
 pip install -e .                    # 可编辑安装
-python -m pytest                    # 全部测试
-python -m pytest tests/test_web.py  # 只跑 Web API
+python scripts/verify.py            # 验证链全链（lint + 全部测试）
+python -m pytest tests/test_web.py  # 只跑 Web API（不含 lint）
 ruff check src/ tests/ scripts/     # lint
 ruff format src/ tests/ scripts/    # 格式化
 python scripts/docs-search.py search "kw" --dir <目录>   # 直跑 CLI
