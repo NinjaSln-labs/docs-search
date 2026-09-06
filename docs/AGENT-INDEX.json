@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "docs-search 文档索引",
+  "description": "AI Agent 可读的文档索引 — 工具元数据、调用协议、API 端点、错误处理与文档地图",
+  "version": "1.0.0",
+  "updated": "2026-09-07",
+  "repo": "NinjaSln-labs/docs-search",
+  "pypi": "docs-search",
+  "pages": "https://ninjasln-labs.github.io/docs-search/",
+
+  "tool": {
+    "name": "docs-search",
+    "description": "零依赖本地文档搜索引擎：SQLite 索引、多关键词 AND 检索、自动增量重建、CLI + Web UI、文档上传接口。运行时零第三方依赖。",
+    "version": "1.0.0",
+    "language": "Python (stdlib only)",
+    "runtime": "Python >= 3.10",
+    "dependencies": [],
+    "license": "MIT",
+    "readonly_note": "搜索/索引只读文档目录；仅 uploads/ 可写（上传接口）",
+
+    "install": {
+      "pypi": "pip install docs-search",
+      "from_source": "python scripts/docs-search.py --help（scripts/ 瘦包装，优先用已安装包，回退 src/）",
+      "entry_points": ["docs-search (CLI)", "docs-search-web (HTTP 服务)"]
+    },
+
+    "invocation": {
+      "cli": {
+        "command": "docs-search <subcommand> [--dir DIR] [--db PATH]",
+        "subcommands": {
+          "index": { "aliases": ["i"], "description": "重建索引", "args": ["--dir", "--db"] },
+          "search": { "aliases": ["s"], "description": "搜索（多关键词 AND）", "args": ["query", "--dir", "--db", "-n/--limit (默认 8)"] },
+          "list": { "aliases": ["l"], "description": "列出全部文档" },
+          "show": { "aliases": ["sh"], "description": "显示文档内容（前 2000 字符）", "args": ["path（相对路径，如 code/x.md）"] },
+          "status": { "aliases": ["st"], "description": "索引状态（records/updated/stale）" },
+          "upload": { "aliases": ["u"], "description": "复制 .md 到文档库 uploads/ 并重建索引", "args": ["file"] },
+          "open": { "aliases": ["o"], "description": "系统默认程序打开文档", "args": ["path"] }
+        }
+      },
+      "web": {
+        "command": "docs-search-web [DIR] [--host HOST] [--port PORT] [--no-browser]",
+        "defaults": { "host": "127.0.0.1", "port": 8765 },
+        "warning": "默认仅监听 127.0.0.1 且无鉴权——勿用 --host 0.0.0.0 暴露公网"
+      }
+    },
+
+    "environment_variables": {
+      "DOCS_SEARCH_DIR": "默认文档目录（优先级低于 --dir）",
+      "DOCS_SEARCH_DB": "默认索引库路径（优先级低于 --db；默认 ~/.docs-search/<目录哈希>/index.db）"
+    },
+
+    "exit_codes": {
+      "0": "成功",
+      "1": "上传失败（文件不存在/过大/文件名非法）或验证链失败（scripts/verify.py）",
+      "2": "CLI 参数错误（argparse）"
+    }
+  },
+
+  "api": {
+    "base": "http://127.0.0.1:8765",
+    "endpoints": [
+      { "method": "GET",  "path": "/api/stats",                    "params": {}, "description": "统计 {count, updated, categories}", "returns": "json" },
+      { "method": "GET",  "path": "/api/search",                   "params": { "q": "关键词（多关键词空格分隔 AND，必填）", "cat": "分类过滤（可选）" }, "description": "搜索，返回前 20 条 {results:[{path,cat,title,snippet}]}", "returns": "json" },
+      { "method": "GET",  "path": "/api/list",                     "params": { "cat": "分类过滤（可选）" }, "description": "列出文档 {docs:[{path,title,size}]}", "returns": "json" },
+      { "method": "GET",  "path": "/api/show",                     "params": { "path": "文档相对路径（必填）" }, "description": "文档全文 {title,body,size,cat,path}；不存在返回 {error}", "returns": "json" },
+      { "method": "POST", "path": "/api/upload?filename=x.md",     "params": { "filename": "目标文件名（仅 .md）" }, "body": "raw UTF-8 文本（≤10MB）", "description": "上传到 uploads/ 并重建索引 {ok,path,count}；同名自动 -1/-2 去重", "returns": "json" },
+      { "method": "POST", "path": "/api/delete?path=uploads/x.md", "params": { "path": "必须位于 uploads/ 下" }, "description": "删除已上传文档 {ok,deleted,count}；库内文档返回 403", "returns": "json" }
+    ],
+    "upload_constraints": ["仅 .md 扩展名", "单文件 ≤ 10MB", "文件名消毒（路径穿越降级为 basename）", "内容必须 UTF-8"],
+    "delete_constraints": ["仅允许 uploads/ 目录内文件", "路径穿越返回 403"]
+  },
+
+  "path_resolution": {
+    "docs_dir": ["--dir 参数", "环境变量 DOCS_SEARCH_DIR", "./docs（当前工作目录）"],
+    "index_db": ["--db 参数（仅 CLI）", "环境变量 DOCS_SEARCH_DB", "~/.docs-search/<目录哈希>/index.db"],
+    "isolation": "索引库按文档目录的 SHA1 哈希（12 位）隔离，不同目录互不干扰；重建幂等（DROP TABLE IF EXISTS）"
+  },
+
+  "error_handling": [
+    { "error": "索引库被占用，无法重建", "cause": "其他进程持有写锁", "action": "结束占用进程或稍后重试；CLI/Web 不要并发重建同一目录" },
+    { "error": "no results for \"...\"", "cause": "无匹配（搜索前已自动增量重建）", "action": "减少关键词 / 换词 / 检查 --dir 是否指向预期目录" },
+    { "error": "文件必须是 UTF-8 文本", "cause": "上传内容非 UTF-8", "action": "转换编码后重试" },
+    { "error": "仅允许删除 uploads/ 下的文档", "cause": "删除目标在库内", "action": "库内文档由文档目录所有者管理，接口不提供删除" },
+    { "error": "文档不存在", "cause": "/api/show 或 /api/delete 的 path 未命中", "action": "先 /api/list 确认相对路径" }
+  ],
+
+  "documents": [
+    { "id": "human-guide", "title": "人类使用手册", "path": "/HUMAN-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/HUMAN-GUIDE.md", "audience": "human" },
+    { "id": "agent-guide", "title": "Agent 操作手册", "path": "/AGENT-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/AGENT-GUIDE.md", "audience": "agent" },
+    { "id": "api", "title": "Web API 参考", "path": "/API.md", "url": "https://ninjasln-labs.github.io/docs-search/API.md", "audience": "both" },
+    { "id": "readme", "title": "README（中文）", "url": "https://github.com/NinjaSln-labs/docs-search/blob/main/README.md", "audience": "both" },
+    { "id": "readme-en", "title": "README（English）", "url": "https://github.com/NinjaSln-labs/docs-search/blob/main/README.en.md", "audience": "both" },
+    { "id": "development", "title": "开发指南", "url": "https://github.com/NinjaSln-labs/docs-search/blob/main/DEVELOPMENT.md", "audience": "contributor" },
+    { "id": "publishing", "title": "发布指南", "url": "https://github.com/NinjaSln-labs/docs-search/blob/main/PUBLISHING.md", "audience": "maintainer" },
+    { "id": "security", "title": "安全策略", "url": "https://github.com/NinjaSln-labs/docs-search/blob/main/SECURITY.md", "audience": "both" }
+  ],
+
+  "quick_start": {
+    "index_and_search": "docs-search index --dir ./docs && docs-search search \"关键词\" --dir ./docs",
+    "web_ui": "docs-search-web ./docs --no-browser --port 8765",
+    "api_search": "curl 'http://127.0.0.1:8765/api/search?q=MCP'",
+    "api_upload": "curl -X POST 'http://127.0.0.1:8765/api/upload?filename=notes.md' --data-binary @notes.md"
+  },
+
+  "verification": {
+    "test_suite": "python scripts/verify.py（ruff + pytest，41 用例：core 单元 + CLI E2E 子进程 + Web API 内存 HTTP）",
+    "ci": "GitHub Actions：ubuntu/windows × Python 3.10/3.13，actions SHA 固定",
+    "audit": "repo-audit python-app 25/25 规则，100/100 (A)"
+  },
+
+  "feedback": {
+    "issues": "https://github.com/NinjaSln-labs/docs-search/issues",
+    "security": "勿公开披露漏洞——走 GitHub 私密安全通告（Security → Report a vulnerability）"
+  }
+}

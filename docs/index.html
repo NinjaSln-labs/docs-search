@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>docs-search 文档</title>
+  <!-- JSON-LD 结构化数据 — AI Agent 可读 -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "docs-search",
+    "url": "https://github.com/NinjaSln-labs/docs-search",
+    "downloadUrl": "https://pypi.org/project/docs-search/",
+    "softwareVersion": "1.0.0",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Windows / macOS / Linux (Python >= 3.10)",
+    "license": "https://github.com/NinjaSln-labs/docs-search/blob/main/LICENSE",
+    "description": "零依赖本地文档搜索引擎：SQLite 索引、毫秒级检索、CLI + Web UI + 文档上传接口（零依赖）",
+    "programmingLanguage": "Python 3 (stdlib only)",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "documentation": [
+      { "name": "AGENT-INDEX.json", "url": "https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json", "format": "json" },
+      { "name": "HUMAN-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/HUMAN-GUIDE.md", "format": "markdown" },
+      { "name": "AGENT-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/AGENT-GUIDE.md", "format": "markdown" },
+      { "name": "API.md", "url": "https://ninjasln-labs.github.io/docs-search/API.md", "format": "markdown" }
+    ]
+  }
+  </script>
+  <style>
+    :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --accent-hover: #79c0ff; --green: #3fb950; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); text-decoration: underline; }
+    .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
+    header.hero { text-align: center; padding: 48px 0 32px; }
+    h1.title { font-size: 2.4em; margin-bottom: 8px; }
+    .tagline { color: var(--muted); font-size: 1.05em; margin-bottom: 18px; }
+    .badges img { margin: 0 3px; vertical-align: middle; }
+    .hero-actions { margin-top: 22px; }
+    .btn { display: inline-block; padding: 10px 22px; border-radius: 8px; font-weight: 600; margin: 4px; border: 1px solid var(--border); }
+    .btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+    .btn.primary:hover { background: #2ea043; text-decoration: none; color: #fff; }
+    .btn.ghost:hover { border-color: var(--accent); text-decoration: none; }
+    section { margin-top: 36px; }
+    h2.section-title { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 18px; }
+    pre.code { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: .92em; line-height: 1.55; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    p code, li code, td code { background: rgba(110,118,129,.25); padding: 1px 6px; border-radius: 5px; font-size: .9em; }
+    pre.code code { background: none; padding: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+    .card h3 { font-size: 1.02em; margin-bottom: 6px; }
+    .card p { color: var(--muted); font-size: .92em; }
+    .card .go { display: inline-block; margin-top: 10px; font-size: .9em; }
+    table { width: 100%; border-collapse: collapse; font-size: .92em; margin: 10px 0; }
+    th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; }
+    th { background: var(--card); }
+    .agent-note { background: rgba(88,166,255,.08); border: 1px solid rgba(88,166,255,.4); border-radius: 10px; padding: 14px 18px; font-size: .93em; }
+    .agent-note strong { color: var(--accent); }
+    footer { text-align: center; color: var(--muted); font-size: .85em; padding: 40px 0 10px; border-top: 1px solid var(--border); margin-top: 48px; }
+    /* markdown viewer */
+    #viewer { display: none; }
+    #viewer .md-body { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 28px 32px; }
+    #viewer h1, #viewer h2, #viewer h3 { border-bottom: 1px solid var(--border); padding-bottom: 6px; margin: 22px 0 12px; }
+    #viewer h1 { font-size: 1.5em; } #viewer h2 { font-size: 1.25em; } #viewer h3 { font-size: 1.1em; }
+    #viewer ul, #viewer ol { padding-left: 26px; margin: 8px 0; }
+    #viewer blockquote { border-left: 3px solid var(--accent); color: var(--muted); padding: 4px 14px; margin: 10px 0; }
+    #viewer table { margin: 12px 0; }
+    #viewer hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+    .back-btn { margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="landing">
+      <header class="hero">
+        <h1 class="title">📚 docs-search</h1>
+        <p class="tagline">零依赖本地文档搜索引擎 — SQLite 索引 · 毫秒级检索 · CLI + Web UI + 文档上传<br>
+        Zero-dependency local document search engine — SQLite index, millisecond retrieval.</p>
+        <div class="badges">
+          <img alt="PyPI" src="https://img.shields.io/pypi/v/docs-search?label=PyPI&color=blue">
+          <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue">
+          <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
+          <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/NinjaSln-labs/docs-search/ci.yml?branch=main&label=CI">
+        </div>
+        <div class="hero-actions">
+          <a class="btn primary" href="https://pypi.org/project/docs-search/">pip install docs-search</a>
+          <a class="btn ghost" href="https://github.com/NinjaSln-labs/docs-search">GitHub 仓库</a>
+        </div>
+      </header>
+
+      <div class="agent-note">
+        <strong>🤖 AI Agent 入口</strong>：本站提供机器可读索引
+        <a href="AGENT-INDEX.json">AGENT-INDEX.json</a>（工具元数据 / API 端点 / 调用协议 / 退出码），
+        以及 <a href="#" onclick="loadDoc('AGENT-GUIDE.md');return false;">AGENT-GUIDE.md</a> 操作手册。抓取 .md 原文请直接用 URL。
+      </div>
+
+      <section>
+        <h2 class="section-title">快速开始 / Quick Start</h2>
+<pre class="code"><code># 安装（或从源码：python scripts/docs-search.py）
+pip install docs-search
+
+# 索引一个文档目录（默认 ./docs，也可用 --dir 指定）
+docs-search index --dir /path/to/your/docs
+
+# 搜索（多关键词 AND，毫秒级）
+docs-search search "关键词" --dir /path/to/your/docs
+
+# 启动 Web UI（含拖拽上传 / 上传接口）
+docs-search-web /path/to/your/docs
+# → http://127.0.0.1:8765</code></pre>
+      </section>
+
+      <section>
+        <h2 class="section-title">特性 / Features</h2>
+        <div class="grid">
+          <div class="card"><h3>⚡ 毫秒级检索</h3><p>SQLite 索引，搜索前自动检测文件变更并增量重建。</p></div>
+          <div class="card"><h3>📦 零依赖</h3><p>纯 Python 标准库（3.10+），运行时零第三方依赖，无网络请求、无遥测。</p></div>
+          <div class="card"><h3>🗂 多库隔离</h3><p>索引库按文档目录哈希隔离（<code>~/.docs-search/&lt;hash&gt;/</code>），多文档库并存互不干扰。</p></div>
+          <div class="card"><h3>🔓 不绑定路径</h3><p>文档目录由 <code>--dir</code> / 环境变量 <code>DOCS_SEARCH_DIR</code> / <code>./docs</code> 解析，无任何写死路径。</p></div>
+          <div class="card"><h3>⬆️ 上传接口</h3><p>Web UI 拖拽上传 + <code>POST /api/upload</code>；仅 .md、≤10MB、文件名消毒防穿越。</p></div>
+          <div class="card"><h3>🖥 跨平台</h3><p>Windows / macOS / Linux；控制台 UTF-8 兼容，防多进程重复绑定端口。</p></div>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">详细手册 / Guides</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>🧑‍💻 人类使用手册</h3>
+            <p>安装、CLI 完整参考、Web UI、路径与索引库规则、安全模型、故障排查 FAQ。</p>
+            <a class="go" href="#" onclick="loadDoc('HUMAN-GUIDE.md');return false;">阅读 HUMAN-GUIDE →</a>
+          </div>
+          <div class="card">
+            <h3>🤖 Agent 操作手册</h3>
+            <p>机器可读调用协议：API 优先的集成方式、错误处理表、常见任务配方。</p>
+            <a class="go" href="#" onclick="loadDoc('AGENT-GUIDE.md');return false;">阅读 AGENT-GUIDE →</a>
+          </div>
+          <div class="card">
+            <h3>🔌 Web API 参考</h3>
+            <p>全部 6 个端点：参数、curl 示例、响应结构、错误码。</p>
+            <a class="go" href="#" onclick="loadDoc('API.md');return false;">阅读 API.md →</a>
+          </div>
+          <div class="card">
+            <h3>🛠 开发与贡献</h3>
+            <p>工程结构、验证链、发布流程（仓库内文档）。</p>
+            <a class="go" href="https://github.com/NinjaSln-labs/docs-search/tree/main#readme">查看仓库 →</a>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        MIT License · <a href="https://github.com/NinjaSln-labs/docs-search">NinjaSln-labs/docs-search</a> ·
+        Powered by GitHub Pages（main 分支 /docs，无构建步骤）
+      </footer>
+    </div>
+
+    <div id="viewer">
+      <a class="btn ghost back-btn" href="#" onclick="showLanding();return false;">← 返回首页</a>
+      <a class="btn ghost back-btn" id="raw-link" href="#" target="_blank">查看 .md 原文</a>
+      <div class="md-body" id="md-body"></div>
+    </div>
+  </div>
+
+<script>
+// ---- 极简 Markdown 渲染器（标题/代码块/表格/列表/引用/链接/行内样式）----
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function inline(s) {
+  s = escHtml(s);
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, href) =>
+    href.startsWith('http') ? `<a href="${href}" target="_blank">${txt}</a>` : `<a href="${href}">${txt}</a>`);
+  return s;
+}
+function renderMd(md) {
+  const lines = md.split('\n'); const out = []; let i = 0;
+  const flushP = buf => { if (buf.length) out.push('<p>' + buf.map(inline).join('<br>') + '</p>'); };
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    if (l.startsWith('```')) {                      // fenced code
+      const lang = l.slice(3).trim(); const buf = []; i++;
+      while (i < lines.length && !lines[i].startsWith('```')) { buf.push(lines[i]); i++; }
+      i++;
+      out.push(`<pre class="code"><code data-lang="${lang}">${escHtml(buf.join('\n'))}</code></pre>`);
+      continue;
+    }
+    if (/^#{1,4} /.test(l)) {                        // headings
+      const n = l.match(/^#+/)[0].length;
+      out.push(`<h${n}>${inline(l.replace(/^#+ /, ''))}</h${n}>`); i++; continue;
+    }
+    if (l.trim() === '---') { out.push('<hr>'); i++; continue; }
+    if (l.startsWith('>')) {                         // blockquote
+      const buf = []; while (i < lines.length && lines[i].startsWith('>')) { buf.push(lines[i].replace(/^>\s?/, '')); i++; }
+      out.push('<blockquote>' + buf.map(inline).join('<br>') + '</blockquote>'); continue;
+    }
+    if (/^\|/.test(l) && i + 1 < lines.length && /^\|[\s:|-]+\|?\s*$/.test(lines[i+1])) {  // table
+      const cells = r => r.split('|').slice(1, -1).map(c => c.trim());
+      const head = cells(l); i += 2; const rows = [];
+      while (i < lines.length && /^\|/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
+      out.push('<table><thead><tr>' + head.map(h => `<th>${inline(h)}</th>`).join('') + '</tr></thead><tbody>' +
+        rows.map(r => '<tr>' + head.map((_, k) => `<td>${inline(r[k] || '')}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table>');
+      continue;
+    }
+    if (/^\s*([-*]|\d+\.) /.test(l)) {               // lists
+      const ordered = /^\s*\d+\./.test(l); const tag = ordered ? 'ol' : 'ul';
+      const items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i])) {
+        items.push('<li>' + inline(lines[i].replace(/^\s*([-*]|\d+\.) /, '')) + '</li>'); i++;
+      }
+      out.push(`<${tag}>${items.join('')}</${tag}>`); continue;
+    }
+    const buf = [];                                   // paragraph
+    while (i < lines.length && lines[i].trim() && !/^(#{1,4} |```|>|\||\s*([-*]|\d+\.) |---$)/.test(lines[i])) { buf.push(lines[i]); i++; }
+    flushP(buf);
+  }
+  return out.join('\n');
+}
+// ---- 文档加载 ----
+function loadDoc(name) {
+  fetch(name).then(r => r.ok ? r.text() : Promise.reject(r.status)).then(md => {
+    document.getElementById('md-body').innerHTML = renderMd(md);
+    document.getElementById('raw-link').href = name;
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('viewer').style.display = 'block';
+    window.scrollTo(0, 0);
+  }).catch(() => { document.getElementById('md-body').innerHTML = '<p>加载失败，可直接访问 <a href="' + name + '">' + name + '</a></p>'; });
+}
+function showLanding() {
+  document.getElementById('viewer').style.display = 'none';
+  document.getElementById('landing').style.display = 'block';
+  window.scrollTo(0, 0);
+}
+if (location.hash && location.hash.startsWith('#doc=')) loadDoc(decodeURIComponent(location.hash.slice(5)));
+</script>
+</body>
+</html>

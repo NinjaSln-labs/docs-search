@@ -14,6 +14,14 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 - **不绑定路径** — 文档目录由参数/环境变量指定，不写死任何本地路径
 - **跨平台** — Windows / macOS / Linux
 
+## 📖 文档站 / Documentation
+
+**https://ninjasln-labs.github.io/docs-search/**
+
+- [人类使用手册](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md)（安装 / CLI / Web / FAQ）
+- [Agent 操作手册](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) + [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json)（机器可读索引）
+- [Web API 参考](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
+
 ## 快速开始 / Quick Start
 
 ```bash

@@ -14,6 +14,10 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **Path-free** — no hardcoded paths; target dir via flag / env var / default
 - **Cross-platform** — Windows / macOS / Linux
 
+## 📖 Documentation
+
+**https://ninjasln-labs.github.io/docs-search/** — [Human Guide](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md) · [Agent Guide](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) · [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json) · [API Reference](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
+
 ## Quick Start
 
 ```bash
