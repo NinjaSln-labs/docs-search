@@ -4,8 +4,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- 发布链路：TestPyPI 灰度作业（workflow_dispatch）+ tag↔pyproject 版本守卫 + twine check；
+  GitHub Environments pypi/testpypi（required reviewers + `v*` tag 部署策略）
+- TestPyPI 灰度发布 1.0.0 成功（whl 18.5KB / sdist 22KB），实机 venv 安装 smoke 通过
+
 ### Changed
 
+- upload/download-artifact 显式命名：download@v4 无 name 时按 artifact 建子目录，
+  dist/ 实为空导致发布失败（已修复并验证）
 - publish.yml 改回最小化权限：顶层 `permissions: {}`，`id-token: write` 仅 publish job 持有
   （上游 repo-audit v1.3.0 SEC-004 支持 job 级 fallback 检测，撤销之前的顶层 workaround）
 - PUBLISHING.md 前置配置补齐上游模板细节：environment 必开 required reviewers、
