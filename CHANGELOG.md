@@ -6,6 +6,14 @@
 
 ### Changed
 
+- publish.yml 改回最小化权限：顶层 `permissions: {}`，`id-token: write` 仅 publish job 持有
+  （上游 repo-audit v1.3.0 SEC-004 支持 job 级 fallback 检测，撤销之前的顶层 workaround）
+- PUBLISHING.md 前置配置补齐上游模板细节：environment 必开 required reviewers、
+  pending publisher 抢注风险警告
+- AGENTS.md 头部修正：scaffold `--update` 可用于存量仓（3a 纠偏），手写自主维护声明保留
+
+### Changed（工程标准化）
+
 - Python 支持地板升至 3.10（pytest 9 要求 ≥3.10；3.8/3.9 已 EOL；零依赖直跑不受影响）
 - 验证链收敛单源 `scripts/verify.py`：pre-commit 钩子与 CI 均调用它，不再复制命令
 - CI 开发依赖改由 `requirements.lock` 锁定安装

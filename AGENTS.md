@@ -1,7 +1,7 @@
 # AGENTS（AI 协作与工程纪律）
 
-> 改编自 repo-audit `templates/common/AGENTS-core.md`（上游模板面向新仓 scaffold，未提供存量仓库的再生成命令，
-> 故**本文件在仓库内直接维护，可直接编辑**）。上游模板修订需手动同步；适配差异见上游反馈
+> 改编自 repo-audit `templates/common/AGENTS-core.md`（上游 scaffold `--update` 亦可为存量仓生成/合并；
+> 本文件为**手写自主维护**，可直接编辑）。上游模板修订需手动同步；适配差异见上游反馈
 > NinjaSln-labs/repo-audit#3。人工协作者同样适用本文件全部条款。
 
 ## 项目概览
