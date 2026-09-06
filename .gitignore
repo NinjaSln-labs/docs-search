@@ -6,3 +6,4 @@ __pycache__/
 audit-report/
 .pytest_cache/
 .ruff_cache/
+src/docs_search.egg-info/
