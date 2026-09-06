@@ -9,6 +9,7 @@
 - 发布链路：TestPyPI 灰度作业（workflow_dispatch）+ tag↔pyproject 版本守卫 + twine check；
   GitHub Environments pypi/testpypi（required reviewers + `v*` tag 部署策略）
 - TestPyPI 灰度发布 1.0.0 成功（whl 18.5KB / sdist 22KB），实机 venv 安装 smoke 通过
+- **正式发布 PyPI 1.0.0**：版本守卫 + twine check + pypi 环境人工批准；实机 `pip install docs-search` smoke 通过
 
 ### Changed
 
