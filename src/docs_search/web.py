@@ -4,6 +4,8 @@
   python scripts/docs-search-web.py [文档目录]              # 启动并打开浏览器
   python scripts/docs-search-web.py --no-browser           # 不打开浏览器
   python scripts/docs-search-web.py --port 8080 --host 0.0.0.0
+  python scripts/docs-search-web.py --token <TOKEN>        # 启用 Bearer 认证（远端部署用）
+  python scripts/docs-search-web.py --user U --password P  # 启用 Basic 认证
 
 路径规则（不绑定任何本地路径）:
   文档目录: 命令行 [目录] > 环境变量 DOCS_SEARCH_DIR > ./docs
@@ -17,11 +19,19 @@ API:
   POST /api/upload?filename=x.md     # 上传文档（raw body = 文件内容，UTF-8）
   POST /api/delete?path=uploads/x.md # 删除 uploads/ 下已上传文档
 
-安全: 默认仅监听 127.0.0.1；上传仅限 .md、单文件 ≤10MB、文件名已消毒。
+认证（远端部署）：--token（Bearer）/ --user+--password（Basic），二选一；
+凭据也可用环境变量 DOCS_SEARCH_TOKEN / DOCS_SEARCH_USER / DOCS_SEARCH_PASSWORD。
+所有路径（含 Web 页面）均受保护；未带/错带凭据返回 401。
+
+安全: 默认仅监听 127.0.0.1；上传仅限 .md、单文件 ≤10MB、文件名已消毒；
+所有 SQL 均为参数化查询（无注入面）。监听非回环地址时**必须**启用认证，否则拒绝启动。
 """
 
 import argparse
+import base64
+import hmac
 import json
+import os
 import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -39,6 +49,48 @@ from .core import (
 )
 
 DEFAULT_PORT = 8765
+
+ENV_TOKEN = "DOCS_SEARCH_TOKEN"
+ENV_USER = "DOCS_SEARCH_USER"
+ENV_PASSWORD = "DOCS_SEARCH_PASSWORD"
+
+
+def validate_listen_config(host, auth):
+    """监听非回环地址时必须启用认证；返回错误消息或 None（安全红线，测试覆盖）"""
+    if host in ("", "127.0.0.1", "localhost", "::1") or auth.enabled:
+        return None
+    return "监听非回环地址时必须启用认证（--token 或 --user/--password），防止服务裸奔暴露"
+
+
+class AuthConfig:
+    """服务端认证配置: Bearer token 或 Basic 用户名/密码，二选一；均未配置则开放（仅限回环监听）"""
+
+    def __init__(self, token=None, username=None, password=None):
+        self.token = token
+        self.username = username
+        self.password = password
+
+    @property
+    def enabled(self):
+        return bool(self.token or (self.username and self.password))
+
+    def check(self, auth_header):
+        """校验 Authorization 头；未启用认证恒通过"""
+        if not self.enabled:
+            return True
+        if not auth_header:
+            return False
+        scheme, _, rest = auth_header.partition(" ")
+        rest = rest.strip()
+        if scheme.lower() == "bearer" and self.token:
+            return hmac.compare_digest(rest, self.token)
+        if scheme.lower() == "basic" and self.username:
+            try:
+                user, _, pw = base64.b64decode(rest).decode("utf-8").partition(":")
+            except Exception:  # noqa: BLE001 -- 坏 Base64 直接拒绝
+                return False
+            return hmac.compare_digest(user, self.username) and hmac.compare_digest(pw, self.password)
+        return False
 
 # ============================================================
 # HTML 界面
@@ -257,13 +309,32 @@ class DocsSearchServer(HTTPServer):
     allow_reuse_address = sys.platform != "win32"
 
 
-def make_handler(docs_dir, db_path):
+def make_handler(docs_dir, db_path, auth=None):
+    auth_cfg = auth or AuthConfig()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             pass  # 静默访问日志
 
+        # ---------- 认证（所有路径统一拦截）----------
+        def _deny(self):
+            body = json.dumps({"error": "unauthorized（需要认证: Bearer token 或 Basic）"}, ensure_ascii=False).encode("utf-8")
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("WWW-Authenticate", 'Basic realm="docs-search"')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _authorized(self):
+            return auth_cfg.check(self.headers.get("Authorization"))
+
         # ---------- GET ----------
         def do_GET(self):
+            if not self._authorized():
+                self._deny()
+                return
             parsed = urllib.parse.urlsplit(self.path)
             if parsed.path in ("/", "/index.html"):
                 self._send(200, "text/html; charset=utf-8", HTML_TEMPLATE.encode("utf-8"))
@@ -336,6 +407,9 @@ def make_handler(docs_dir, db_path):
 
         # ---------- POST ----------
         def do_POST(self):
+            if not self._authorized():
+                self._deny()
+                return
             parsed = urllib.parse.urlsplit(self.path)
             params = urllib.parse.parse_qs(parsed.query)
             if parsed.path == "/api/upload":
@@ -419,7 +493,25 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1，勿暴露公网）")
     parser.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"端口（默认 {DEFAULT_PORT}）")
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    parser.add_argument("--token", default=None, help=f"启用 Bearer 认证（默认 ${ENV_TOKEN}）")
+    parser.add_argument("--user", default=None, help=f"启用 Basic 认证用户名（默认 ${ENV_USER}；与 --password 成对）")
+    parser.add_argument("--password", default=None, help=f"Basic 认证密码（默认 ${ENV_PASSWORD}）")
     args = parser.parse_args()
+
+    token = args.token or os.environ.get(ENV_TOKEN)
+    user = args.user or os.environ.get(ENV_USER)
+    password = args.password or os.environ.get(ENV_PASSWORD)
+    if token and (user or password):
+        parser.error("--token 与 --user/--password 互斥，只能启用一种认证方式")
+    if bool(user) != bool(password):
+        parser.error("--user 与 --password 必须成对提供")
+    auth = AuthConfig(token, user, password)
+
+    guard = validate_listen_config(args.host, auth)
+    if guard:
+        print(f"错误: {guard}", file=sys.stderr)
+        print("  例: docs-search-web <DIR> --host 0.0.0.0 --token <TOKEN>", file=sys.stderr)
+        sys.exit(1)
 
     docs_dir = resolve_docs_dir(args.dir)
     db_path = resolve_db_path(docs_dir)
@@ -431,8 +523,10 @@ def main():
     print(f"文档目录: {docs_dir}")
     n, updated = ensure_index(docs_dir, db_path)
     print(f"索引就绪: {n} 个文档{'（已重建）' if updated else ''}")
+    if auth.enabled:
+        print("认证: 已启用（Bearer）" if auth.token else "认证: 已启用（Basic）")
 
-    server = DocsSearchServer((args.host, args.port), make_handler(docs_dir, db_path))
+    server = DocsSearchServer((args.host, args.port), make_handler(docs_dir, db_path, auth))
     url = f"http://{'127.0.0.1' if args.host in ('0.0.0.0', '') else args.host}:{args.port}"
     print(f"服务已启动: {url}")
     print("按 Ctrl+C 停止")

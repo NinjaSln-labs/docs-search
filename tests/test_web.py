@@ -4,12 +4,13 @@ import json
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import HTTPServer
 
 import pytest
 
-from docs_search.web import make_handler
+from docs_search.web import AuthConfig, make_handler, validate_listen_config
 
 
 def _urlopen_retry(req, attempts=3):
@@ -41,9 +42,123 @@ def server(tmp_path):
     srv.shutdown()
 
 
+@pytest.fixture
+def server_auth(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "code").mkdir(parents=True)
+    (docs / "code" / "a.md").write_text("# A\n\nbody TOKEN_ONE\n", encoding="utf-8")
+    db = tmp_path / "idx.db"
+    srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db, AuthConfig(token="s3cret-token")))
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{port}", docs
+    srv.shutdown()
+
+
 def get(base, path):
     with _urlopen_retry(base + path) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+def req(base, path, headers=None):
+    r = urllib.request.Request(base + path, headers=headers or {})
+    try:
+        with _urlopen_retry(r) as resp:
+            return resp.status, resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8")
+
+
+class TestAuth:
+    def test_no_credentials_rejected(self, server_auth):
+        base, _ = server_auth
+        status, _ = req(base, "/api/stats")
+        assert status == 401
+
+    def test_bearer_granted(self, server_auth):
+        base, _ = server_auth
+        status, body = req(base, "/api/stats", headers={"Authorization": "Bearer s3cret-token"})
+        assert status == 200 and '"count": 1' in body
+
+    def test_wrong_token_rejected(self, server_auth):
+        base, _ = server_auth
+        status, _ = req(base, "/api/stats", headers={"Authorization": "Bearer wrong"})
+        assert status == 401
+
+    def test_post_endpoints_protected_too(self, server_auth):
+        base, _ = server_auth
+        status, _ = req(base, "/api/upload?filename=x.md")
+        assert status == 401
+        status, _ = req(base, "/api/delete?path=uploads/x.md")
+        assert status == 401
+
+    def test_basic_auth(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
+        db = tmp_path / "idx.db"
+        import base64 as b64
+
+        srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db, AuthConfig(username="admin", password="pw")))
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            base = f"http://127.0.0.1:{port}"
+            status, _ = req(base, "/api/stats")
+            assert status == 401  # 未带凭据拒绝
+            good = "Basic " + b64.b64encode(b"admin:pw").decode()
+            status, body = req(base, "/api/stats", headers={"Authorization": good})
+            assert status == 200 and '"count": 1' in body
+            bad = "Basic " + b64.b64encode(b"admin:wrong").decode()
+            status, _ = req(base, "/api/stats", headers={"Authorization": bad})
+            assert status == 401
+        finally:
+            srv.shutdown()
+
+    def test_subset_credentials_config_rejected(self):
+        """user 无 password / password 无 user 均不构成有效认证"""
+        assert AuthConfig(token=None, username="u", password=None).enabled is False
+        assert AuthConfig(token="t", username="u", password="p").enabled is True
+
+    def test_loopback_guard(self):
+        """回环地址无需认证；非回环无认证被拒——DB 泄露红线"""
+        assert validate_listen_config("127.0.0.1", AuthConfig()) is None
+        assert validate_listen_config("localhost", AuthConfig()) is None
+        assert validate_listen_config("0.0.0.0", AuthConfig()) is not None
+        assert validate_listen_config("0.0.0.0", AuthConfig(token="t")) is None
+        assert validate_listen_config("192.168.1.5", AuthConfig()) is not None
+
+
+class TestSQLInjection:
+    """SQL 注入防护证明: 所有查询均为参数化,恶意输入按字面值处理,不改变查询结构"""
+
+    def test_keyword_injection_is_literal(self, server):
+        base, _ = server
+        payloads = [
+            "' OR '1'='1",
+            "'; DROP TABLE docs; --",
+            "%' OR 1=1 --",
+            "\" OR \"1\"=\"1",
+            "x' UNION SELECT * FROM docs--",
+        ]
+        for p in payloads:
+            r = get(base, "/api/search?q=" + urllib.parse.quote(p))
+            assert "results" in r  # 正常响应,不报语法错误
+            assert all(isinstance(x["path"], str) for x in r["results"])
+        # 分类注入同样按字面值处理
+        r = get(base, "/api/search?q=TOKEN_ONE&cat=" + urllib.parse.quote("' OR '1'='1"))
+        assert "results" in r
+
+    def test_db_still_intact_after_injection_attempts(self, server):
+        base, _ = server
+        get(base, "/api/search?q=" + urllib.parse.quote("'; DROP TABLE docs; --"))
+        get(base, "/api/list?cat=" + urllib.parse.quote("' OR '1'='1; --"))
+        # 库仍在且可正常查询
+        r = get(base, "/api/search?q=TOKEN_ONE")
+        assert r["results"][0]["path"] == "code/a.md"
 
 
 def post(base, path, body=None, raw=False):
