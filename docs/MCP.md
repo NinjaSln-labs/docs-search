@@ -53,32 +53,49 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 
 ## ZCode
 
-> ⏳ 待实测。以下已按官方文档核实(zcode.z.ai/docs):配置方式 + 第三方模型接入(免订阅可行)。
-> 注意:ZCode 是**桌面应用**(非 CLI),模型与 MCP 均在 GUI 配置,配置落盘 `~/.zcode/v2/config.json`。
+**agent 级已实测通过**（Mac, ZCode CLI 0.16.5，`zcode.cjs -p` 非交互直调 docs_search：
+搜「上传」3 命中）。关键要点：
 
-**模型接入(三选一)**:
-
-- Z.ai / BigModel 账号授权(Coding Plan;新用户绑 BigModel 送 5 天 × 800 万 tokens/天试用)
-- **第三方供应商**:首次启动选 `Use API Key`,或聊天框模型选择器 → Manage Models → Model Settings;
-  支持 Anthropic/OpenAI 兼容端点(如 DeepSeek 的 `https://api.deepseek.com/anthropic`),
-  填 `baseURL` + `apiKey`(+可选 `headers`);provider 仅认连接字段,自定义请求参数暂不支持
-
-**MCP 接入**:Settings → MCP Servers → **New MCP Server**,Scope 选 User 或 Workspace,类型 `stdio`,
-Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`;
-或 **Full configuration mode** 直接粘贴(兼容 `{"mcpServers": {...}}` 结构):
+- **CLI 入口**：`node /Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`（非 PATH 命令；
+  支持 `-p/--prompt` 非交互）
+- **模型与 MCP 同文件**：`~/.zcode/cli/config.json`（GUI 用 `~/.zcode/v2/config.json`，两者独立）
+- **第三方供应商**：`provider.<id>` 条目，`kind: "openai-compatible"`（或 `"anthropic"`）+
+  `options.apiKey/baseURL`；实测用 pi 的 tokenrouter 挂 `z-ai/glm-5.3-free` 直连成功
+- **model 角色**：`model.main` 是**字符串** `"<providerId>/<modelId>"`（不要写成对象，
+  `.strict()` schema 会整段拒收）；注意 `apiKey: ""`（空串）也会导致整个 config 被判 invalid 丢弃
+- **MCP**：同一文件的 `mcp.servers` 键（注意不是 `mcpServers`）：
 
 ```json
 {
-  "mcpServers": {
-    "docs-search": {
-      "command": "docs-search-mcp",
-      "args": ["--dir", "/path/to/your/docs"]
+  "model": { "main": "tokenrouter/z-ai/glm-5.3-free" },
+  "provider": {
+    "tokenrouter": {
+      "kind": "openai-compatible",
+      "options": { "apiKey": "...", "baseURL": "https://api.tokenrouter.com/v1" },
+      "enabled": true,
+      "models": {
+        "z-ai/glm-5.3-free": {
+          "limit": { "context": 262144, "output": 8192 },
+          "modalities": { "input": ["text"], "output": ["text"] }
+        }
+      }
+    }
+  },
+  "mcp": {
+    "servers": {
+      "docs-search": {
+        "command": "docs-search-mcp",
+        "args": ["--dir", "/path/to/your/docs"],
+        "enable": true
+      }
     }
   }
 }
 ```
 
-启动后确认列表里 docs-search 已启用;命令找不到时改绝对路径。
+GUI 侧（Settings → MCP Servers）同样支持表单和 Full configuration mode（兼容 `mcpServers` 结构），
+配置落盘后 CLI 与 GUI 独立读取；调试看 `~/.zcode/cli/log/zcode-<date>.jsonl`
+（`config.file.invalid` 事件会给出精确的 schema 报错）。
 
 ## Qoder
 
