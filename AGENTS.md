@@ -28,7 +28,7 @@ docs-search：零依赖本地文档搜索引擎（Python 标准库 + SQLite，CL
 ### 验证链单源
 
 ```bash
-python -m pytest          # tests/ 单元 + CLI E2E + Web API（41 用例）
+python -m pytest          # tests/ 单元 + CLI/Web/MCP/remote E2E（98 用例；实际数以 scripts/verify.py 输出为准）
 ruff check src/ tests/ scripts/
 ```
 

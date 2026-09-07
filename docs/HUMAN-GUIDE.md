@@ -126,7 +126,9 @@ docs-search upload ~/Downloads/new-note.md --dir ~/my-notes
 # reindexed 136 docs in 45ms
 ```
 
-复制到文档库的 `uploads/` 子目录并重建索引。同名自动加 `-1`、`-2` 后缀。限制：仅 `.md`、单文件 ≤ 10MB。
+复制到文档库的 `uploads/` 子目录并重建索引。限制：仅 `.md`、单文件 ≤ 10MB。
+同名冲突策略由 `--if-exists` 决定：默认 `error`（提示重名，不写不覆盖）、`overwrite`（强制覆盖）、`keep`（生成 `-1`/`-2` 新文件）。
+可选 `--workspace <name>`：写到自包含工作空间库（`~/.docs-search/workspaces/<ws>/`），不填 = 默认库。
 
 ### open (`o`) — 打开文档
 
@@ -184,14 +186,15 @@ docs-search-web ~/my-notes --no-browser   # 脚本/后台场景
 | GET  | `/api/search?q=关键词&cat=` | 搜索 |
 | GET  | `/api/list?cat=` | 列出文档 |
 | GET  | `/api/show?path=x.md` | 文档内容 |
-| POST | `/api/upload?filename=x.md` | 上传（body = 文件文本内容） |
-| POST | `/api/delete?path=uploads/x.md` | 删除 uploads/ 下文档 |
+| POST | `/api/upload?filename=x.md&if_exists=error\|overwrite\|keep&ws=<ws>` | 上传（body = 文件文本内容；同名默认 409 提示） |
+| POST | `/api/delete?path=uploads/x.md&ws=<ws>` | 删除 uploads/ 下文档 |
 
 curl 示例：
 
 ```bash
 curl 'http://127.0.0.1:8765/api/search?q=部署'
 curl -X POST 'http://127.0.0.1:8765/api/upload?filename=notes.md' --data-binary @notes.md
+# 同名冲突: 默认 409 提示; 覆盖加 &if_exists=overwrite; 新文件加 &if_exists=keep; 写工作空间库加 &ws=proj-a
 ```
 
 完整参数与响应结构见 [API.md](API.md)。
@@ -224,7 +227,11 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=notes.md' --data-binary 
 当前版本只收 `.md`。这是刻意设计——零依赖。转换成 Markdown 后可上传。
 
 **Q：文件名会重复吗？**
-上传时同名自动加 `-1`、`-2` 后缀；库内文件路径以相对路径唯一标识。
+默认不会——同名上传返回重名提示（409），不写也不覆盖。需要覆盖时加 `if_exists=overwrite`（或 CLI `--if-exists overwrite`），需要保留多版本时用 `if_exists=keep` 自动加 `-1`/`-2` 后缀；库内文件路径以相对路径唯一标识。
+
+**Q：多个项目/主题的文档怎么分开？**
+每次操作可带 `workspace`（CLI `--workspace <name>`、Web `?ws=<name>`）：不同 workspace 是各自独立的自包含库
+（`~/.docs-search/workspaces/<ws>/`），天然隔离互不可见；不填 = 默认库。搜索/列表传 `workspace=all` 可一次跨全部库聚合。
 
 **Q：Windows 下中文乱码？**
 v1.0.0 起控制台输出已强制 UTF-8。若终端仍乱码，执行 `chcp 65001` 后重试。

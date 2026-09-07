@@ -14,7 +14,7 @@
   "dependencies": [],
   "license": "MIT",
   "entry_points": ["docs-search", "docs-search-web", "docs-search-mcp"],
-  "network": "本地模式无出站请求(纯 stdio),HTTP 服务默认仅绑定 127.0.0.1;MCP 远程模式(--url/$DOCS_SEARCH_URL)会向指定服务发 HTTP 请求"
+  "network": "本地模式无出站请求(纯 stdio);HTTP 服务默认仅绑定 127.0.0.1,非回环监听必须启用认证(--token/--user);MCP 远程模式(--url/$DOCS_SEARCH_URL)会向指定服务发 HTTP 请求,可带 Bearer/Basic 凭据"
 }
 ```
 
@@ -52,6 +52,7 @@ curl 'http://127.0.0.1:8765/api/show?path=infra/mcp.md'   # 取全文
 - 多关键词空格分隔 = AND；URL 里空格编码为 `%20`
 - 搜索前服务端自动增量重建，**无需手动维护索引**
 - 返回 snippet 只有 150 字符，要全文跟 `/api/show`
+- **多库**：请求带 `?ws=<name>` 切到该 workspace 自包含库（不填 = 默认库）；`?ws=all` 跨全部库聚合，结果带 `ws` 来源字段
 
 ### 4.2 写入文档记忆（上传）
 
@@ -63,7 +64,8 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=session-2026-09-07.md' \
 
 - 上传即索引（响应里的 `count` 是新总数），立即可搜
 - 约束：仅 `.md`、≤10MB、UTF-8；文件名消毒，路径穿越变 basename
-- 同名自动 `-1`/`-2` 去重——响应的 `path` 才是真实路径，用它做后续操作
+- **同名策略** `if_exists`：默认 `error`（重名返回 409/错误，不写不覆盖）；`overwrite` 强制覆盖；`keep` 生成 `-1`/`-2` 新文件——响应的 `path` 才是真实路径，用它做后续操作
+- **多库**：`?ws=<name>` 写到指定 workspace 库（不支持 `all`）
 - Agent 典型模式：会话结束 → 把结论写成 md → 上传 → 下个会话可检索
 
 ### 4.3 删除已上传文档
@@ -79,6 +81,7 @@ curl -X POST 'http://127.0.0.1:8765/api/delete?path=uploads/session-2026-09-07.m
 ```bash
 curl 'http://127.0.0.1:8765/api/stats'        # 总数/更新时间/分类列表
 curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类）
+curl 'http://127.0.0.1:8765/api/list?ws=all'  # 跨全部库枚举（结果带 ws 来源）
 ```
 
 ### 4.5 MCP 接入（推荐给支持 MCP 的 Agent：Cursor / ZCode / Qoder / DSH）
@@ -86,6 +89,8 @@ curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类�
 内置零依赖 MCP stdio server（`docs-search-mcp`），工具逻辑与 HTTP API 同源：
 
 - 工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`（参数与语义同 §4.1–§4.4）
+- 5 个工具均带可选 `workspace` 参数：指定切到自包含库，不填=默认库；`docs_search`/`docs_info` 支持
+  `workspace="all"` 跨库聚合（结果带 `[workspace]` 来源标注）；读/写/删不支持 `all`
 - 协议：JSON-RPC 2.0 over stdio，按行分隔；搜索前自动增量重建，无需手动维护索引
 - 两种模式：本地模式（`--dir`，读本地目录，零网络）；远程模式（`--url http://ip:port` 或
   `$DOCS_SEARCH_URL`，代理到已运行的 docs-search 服务，不读本地目录——服务已启动/异机共享时用）
@@ -122,7 +127,8 @@ curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类�
 
 ## 7. 安全红线（Agent 必读）
 
-1. 服务无鉴权：不要把 `--host` 改成 `0.0.0.0`；只在 `127.0.0.1` 上用
+1. 服务认证：监听非回环地址（`--host 0.0.0.0` 等）**必须**启用认证（`--token`/`--user`）否则拒绝启动；
+   默认 `127.0.0.1` 可无认证，但远程模式只连可信服务、凭据走环境变量
 2. 上传内容会进入索引并对本机所有本机进程可见——**不要上传含密钥/隐私的原始数据**（先脱敏）
 3. 删除接口只碰 `uploads/`；对库内文档的修改请走文件系统（用户自己的职责范围）
 4. 漏洞勿公开披露：https://github.com/NinjaSln-labs/docs-search/security/advisories/new

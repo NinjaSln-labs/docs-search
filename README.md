@@ -83,7 +83,7 @@ curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" \
      --data-binary @notes.md
 ```
 
-上传的文件存入 `<文档目录>/uploads/` 并自动进入索引；同名自动加 `-1`、`-2` 后缀。
+上传的文件存入 `<文档目录>/uploads/` 并自动进入索引；同名默认返回重名提示（不写不覆盖），可 `if_exists=overwrite` 覆盖或 `if_exists=keep` 生成 `-1`/`-2` 新文件；每次操作可带 `workspace` 切到独立自包含库（不填 = 默认库）。
 
 ## AI Agent 接入（MCP）
 
@@ -114,7 +114,7 @@ docs-search-web /path/to/docs --host 0.0.0.0 --token <TOKEN>
 
 ## 安全说明 / Security
 
-- 服务默认仅监听 `127.0.0.1`，**请勿用 `--host 0.0.0.0` 暴露到公网**（接口无鉴权）
+- 服务默认仅监听 `127.0.0.1`；**监听非回环地址（如 `--host 0.0.0.0`）必须启用认证**（`--token` Bearer 或 `--user/--password` Basic），否则拒绝启动
 - 上传仅接受 `.md` 文件、单文件 ≤ 10MB、文件名经过消毒（防路径穿越）
 - 删除接口仅允许操作 `uploads/` 目录内的文件
 

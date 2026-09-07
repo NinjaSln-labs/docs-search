@@ -223,7 +223,7 @@ cp integrations/pi/docs-search.ts .pi/extensions/docs-search.ts
 
 ## 安全注意
 
-- 本地模式: server 只操作 `--dir` 指定目录;写入仅限 `uploads/` 且文件名消毒(路径穿越降级为 basename);无鉴权、无网络(纯 stdio);文档库对本机进程可读——**不要写入密钥/隐私原始数据,先脱敏**
+- 本地模式: server 只操作 `--dir` 指定目录;写入仅限 `uploads/` 且文件名消毒(路径穿越降级为 basename);无网络(纯 stdio);文档库对本机进程可读——**不要写入密钥/隐私原始数据,先脱敏**
 - 远程模式: 仅向 `--url`/`$DOCS_SEARCH_URL` 指定的服务发请求,上传/删除防护与认证(Bearer/Basic)由服务端强制执行——**只连可信服务,凭据不要写进会话/文档,只放配置或环境变量**
 - 漏洞勿公开披露:走 [SECURITY.md](SECURITY.md) 的私密报告渠道
 

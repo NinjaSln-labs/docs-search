@@ -75,7 +75,7 @@ Launch: `python scripts/docs-search-web.py [DIR] [--port 8765] [--host 127.0.0.1
 curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" --data-binary @notes.md
 ```
 
-Uploads land in `<docs dir>/uploads/` and are indexed immediately; duplicate names get `-1`, `-2` suffixes.
+Uploads land in `<docs dir>/uploads/` and are indexed immediately; same-name conflicts default to a hint (409, nothing written) — use `if_exists=overwrite` to replace or `if_exists=keep` for `-1`/`-2` new files; every operation may carry a `workspace` for a self-contained library (omitted = default library).
 
 ## AI Agent Integration (MCP)
 
@@ -107,7 +107,7 @@ docs-search-web /path/to/docs --host 0.0.0.0 --token <TOKEN>
 
 ## Security Notes
 
-- Server binds `127.0.0.1` by default — **do not expose via `--host 0.0.0.0`** (no auth)
+- Server binds `127.0.0.1` by default — **non-loopback listening (e.g. `--host 0.0.0.0`) requires auth** (`--token` Bearer or `--user/--password` Basic), otherwise startup is refused
 - Uploads: `.md` only, ≤ 10MB per file, sanitized filenames (path-traversal safe)
 - Delete endpoint only touches files inside `uploads/`
 
