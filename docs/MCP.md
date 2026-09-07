@@ -53,11 +53,19 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 
 ## ZCode
 
-> ⏳ 暂缓实测(无订阅)。以下配置已按官方文档( zcode.z.ai/docs/mcp-services )核实,订阅后可直接用。
+> ⏳ 待实测。以下已按官方文档核实(zcode.z.ai/docs):配置方式 + 第三方模型接入(免订阅可行)。
+> 注意:ZCode 是**桌面应用**(非 CLI),模型与 MCP 均在 GUI 配置,配置落盘 `~/.zcode/v2/config.json`。
 
-Settings → MCP Servers → **New MCP Server**,Scope 选 User 或 Workspace,类型保持 `stdio`,
-Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`。
-或用 **Full configuration mode** 直接粘贴(兼容 `{"mcpServers": {...}}` 结构):
+**模型接入(三选一)**:
+
+- Z.ai / BigModel 账号授权(Coding Plan;新用户绑 BigModel 送 5 天 × 800 万 tokens/天试用)
+- **第三方供应商**:首次启动选 `Use API Key`,或聊天框模型选择器 → Manage Models → Model Settings;
+  支持 Anthropic/OpenAI 兼容端点(如 DeepSeek 的 `https://api.deepseek.com/anthropic`),
+  填 `baseURL` + `apiKey`(+可选 `headers`);provider 仅认连接字段,自定义请求参数暂不支持
+
+**MCP 接入**:Settings → MCP Servers → **New MCP Server**,Scope 选 User 或 Workspace,类型 `stdio`,
+Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`;
+或 **Full configuration mode** 直接粘贴(兼容 `{"mcpServers": {...}}` 结构):
 
 ```json
 {
@@ -69,6 +77,8 @@ Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`。
   }
 }
 ```
+
+启动后确认列表里 docs-search 已启用;命令找不到时改绝对路径。
 
 ## Qoder
 
