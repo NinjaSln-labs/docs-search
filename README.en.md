@@ -83,8 +83,8 @@ A zero-dependency MCP stdio server is built in, so AI agents can search/write th
 # Cursor (~/.cursor/mcp.json)
 { "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }
 
-# Qoder CLI (-s user for global; use absolute path if command not found)
-qoder mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
+# Qoder CLI (-s user for global; CN edition uses `qodercn` — separate account from intl)
+qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 ```
 
 Exposes 5 tools: `docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`.

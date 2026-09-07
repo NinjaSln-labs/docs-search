@@ -72,19 +72,21 @@ Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`。
 
 ## Qoder
 
-**配置/协议层已实测通过**(Mac, qoder CLI 1.1.43:`mcp list` 显示 `✓ Connected`,
-即 qoder 成功启动本 server 并完成握手;agent 级端到端待账号额度恢复后验证,
-工具调用行为已由 dsh/cursor/pi 三家 MCP 客户端同协议验证):
+**agent 级已实测通过**（Mac, qodercn CLI 1.1.44,`-p` 非交互直调 docs_search:
+搜「上传」3 命中)。注意:
+
+- **额度在 Qoder CN 版**(`qodercn` / Qoder CN.app,npm 包 `@qodercn-ai/qodercli`),
+  国际版 `qoder` 是独立账号体系——两边订阅不通用,选对 CLI 再配
 
 ```bash
-qoder mcp add -s user docs-search -- docs-search-mcp --dir /path/to/your/docs
-qoder mcp list        # 应显示 docs-search ✓ Connected
+qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/your/docs
+qodercn mcp list        # 应显示 docs-search ✓ Connected
 ```
 
-- `-s user` 写入 `~/.qoder/settings.json` 全局可用(默认 local 仅当前项目;home 目录下不加会被拒)
+- `-s user` 写入用户级配置,全局可用(home 目录下不加会被拒)
 - 命令找不到时改绝对路径(pip 装在 `~/.local/bin` 时注意 PATH)
 - CLI 已在运行时用 `/mcp reload` 重新发现;新会话自动加载
-- agent 非交互:`qoder -p [--dangerously-skip-permissions] "…"`(消耗账号额度)
+- agent 非交互:`qodercn -p [--dangerously-skip-permissions] "…"`
 
 ## DSH(DeepSeek Harness)
 
