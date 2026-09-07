@@ -2,9 +2,11 @@
 
 路径解析规则（不绑定任何本地/个人路径）:
   文档目录:  --dir 参数 > 环境变量 DOCS_SEARCH_DIR > ./docs（当前工作目录下）
-  索引库:    --db 参数 > 环境变量 DOCS_SEARCH_DB > ~/.docs-search[/<工作空间>]/<目录哈希>/index.db
-             按文档目录哈希隔离；可选 --workspace（环境变量 DOCS_SEARCH_WORKSPACE）在哈希上再加一层
-             命名空间，不同工作空间天然分割（不填 = 默认库，路径与旧版一致）
+  索引库:    --db 参数 > 环境变量 DOCS_SEARCH_DB > ~/.docs-search/<目录哈希>/index.db
+             按文档目录哈希隔离，多个文档库可并存互不干扰。
+  工作空间:  每次操作可带 workspace（MCP 工具参数 / Web API ?ws= / CLI --workspace）；
+             指定时使用自包含库 ~/.docs-search/workspaces/<ws>/（docs 目录 + index.db），
+             不指定 = 默认库。操作级概念，不在服务启动时绑定。
   远程服务:  --url 参数 > 环境变量 DOCS_SEARCH_URL（可选；配置后走远程模式，
              不读本地目录，改连已运行的 docs-search 服务，见 remote.py）
 
@@ -23,7 +25,6 @@ from pathlib import Path
 ENV_DOCS_DIR = "DOCS_SEARCH_DIR"
 ENV_DB_PATH = "DOCS_SEARCH_DB"
 ENV_SERVICE_URL = "DOCS_SEARCH_URL"
-ENV_WORKSPACE = "DOCS_SEARCH_WORKSPACE"
 DEFAULT_DOCS_DIRNAME = "docs"
 
 # 上传同名冲突策略（error=默认提示 / overwrite=覆盖 / keep=生成 -N 新文件）
@@ -44,8 +45,12 @@ def win_utf8():
             pass
 
 
-def resolve_docs_dir(explicit=None):
-    """解析文档根目录: --dir > DOCS_SEARCH_DIR > ./docs"""
+def resolve_docs_dir(explicit=None, workspace=None):
+    """解析文档根目录: workspace 优先（自包含库）> --dir > $DOCS_SEARCH_DIR > ./docs"""
+    ws = resolve_workspace(workspace)
+    if ws:
+        docs, _ = resolve_workspace_paths(ws)
+        return docs.resolve()
     if explicit:
         p = Path(explicit).expanduser()
     elif os.environ.get(ENV_DOCS_DIR):
@@ -62,11 +67,11 @@ def resolve_service_url(explicit=None):
 
 
 def resolve_workspace(explicit=None):
-    """解析工作空间名: --workspace > $DOCS_SEARCH_WORKSPACE;未配置返回 None(默认库)。
-    危险字符消毒（用于索引库目录名，防路径穿越）"""
+    """解析工作空间名（操作级）: 未配置返回 None（默认库）。
+    危险字符消毒（用于目录名，防路径穿越）"""
     import re
 
-    val = explicit or os.environ.get(ENV_WORKSPACE) or ""
+    val = explicit or ""
     val = val.strip()
     if not val:
         return None
@@ -74,18 +79,37 @@ def resolve_workspace(explicit=None):
     return val or None
 
 
-def resolve_db_path(docs_dir, explicit=None, workspace=None):
-    """解析索引库路径: --db > $DOCS_SEARCH_DB > ~/.docs-search[/<workspace>]/<目录哈希>/index.db"""
+def resolve_workspace_paths(workspace):
+    """workspace 自包含库的物理位置: (docs 目录, 索引库路径)。
+    独立于 --dir/默认目录，天然分割；目录首次使用时由调用方创建。"""
+    root = Path.home() / ".docs-search" / "workspaces" / resolve_workspace(workspace)
+    return root / "docs", root / "index.db"
+
+
+def resolve_paths(docs_dir_explicit=None, db_explicit=None, workspace=None):
+    """解析 (文档目录, 索引库) 对——操作级 workspace 的单点入口。
+    workspace 指定 → 自包含库（忽略 --dir）；否则 --dir > $DOCS_SEARCH_DIR > ./docs；
+    --db 显式时始终覆盖索引库路径。"""
+    ws = resolve_workspace(workspace)
+    if ws:
+        docs_dir, db_path = resolve_workspace_paths(ws)
+        docs_dir, db_path = docs_dir.resolve(), db_path.resolve()
+    else:
+        docs_dir = resolve_docs_dir(docs_dir_explicit)
+        db_path = resolve_db_path(docs_dir)
+    if db_explicit:
+        db_path = resolve_db_path(docs_dir, db_explicit)
+    return docs_dir, db_path
+
+
+def resolve_db_path(docs_dir, explicit=None):
+    """解析索引库路径: --db > $DOCS_SEARCH_DB > ~/.docs-search/<目录哈希>/index.db（按目录隔离）"""
     if explicit:
         return Path(explicit).expanduser().resolve()
     if os.environ.get(ENV_DB_PATH):
         return Path(os.environ[ENV_DB_PATH]).expanduser().resolve()
     key = hashlib.sha1(str(docs_dir).replace("\\", "/").lower().encode("utf-8")).hexdigest()[:12]
-    root = Path.home() / ".docs-search"
-    ws = resolve_workspace(workspace)
-    if ws:
-        root = root / ws  # 工作空间层: ~/.docs-search/<ws>/<hash>/index.db
-    return root / key / "index.db"
+    return Path.home() / ".docs-search" / key / "index.db"
 
 
 def meta_path(db_path):

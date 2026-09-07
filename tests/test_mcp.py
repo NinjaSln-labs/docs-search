@@ -22,26 +22,29 @@ SCRIPT = REPO / "scripts" / "docs-search-mcp.py"
 class McpClient:
     """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应;支持本地(--dir)与远程(--url/--token)"""
 
-    def __init__(self, docs_dir=None, url=None, token=None):
+    def __init__(self, docs_dir=None, url=None, token=None, env_extra=None):
         if url:
             args = ["--url", url]
             if token:
                 args += ["--token", token]
         else:
             args = [str(docs_dir)]
+        env = {
+            "PYTHONIOENCODING": "utf-8",
+            "PATH": "",
+            "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""),
+            "USERPROFILE": __import__("os").environ.get("USERPROFILE", ""),
+            "HOME": __import__("os").environ.get("HOME", ""),
+        }
+        if env_extra:
+            env.update(env_extra)
         self.proc = subprocess.Popen(
             [sys.executable, str(SCRIPT), *args],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=REPO,
-            env={
-                "PYTHONIOENCODING": "utf-8",
-                "PATH": "",
-                "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""),
-                "USERPROFILE": __import__("os").environ.get("USERPROFILE", ""),
-                "HOME": __import__("os").environ.get("HOME", ""),
-            },
+            env=env,
         )
         self._next_id = 0
 
@@ -303,6 +306,33 @@ def test_remote_mode_full_roundtrip(tmp_path, web_server):
         assert "hello.md" in out and "infra/mcp.md" in out
         out = c.text(c.call("docs_info", {"cat": "infra"}))
         assert "mcp.md" in out and "hello.md" not in out
+    finally:
+        c.close()
+
+
+def test_local_workspace_isolation(tmp_path):
+    """操作级 workspace: 工具调用传 workspace 参数 → 自包含库,与默认库天然隔离"""
+    docs = make_corpus(tmp_path)
+    fake_home = tmp_path / "fakehome"
+    c = McpClient(docs, env_extra={"HOME": str(fake_home), "USERPROFILE": str(fake_home)})
+    try:
+        c.initialize()
+        # 默认库: 有 hello.md(1 篇)
+        out = c.text(c.call("docs_info", {}))
+        assert "hello.md" in out and "infra/mcp.md" in out
+        # 写入 workspace=proj-a → 独立库
+        out = c.text(c.call("docs_write", {"filename": "ws.md", "content": "WS_ISOLATION_TOKEN\n", "workspace": "proj-a"}))
+        assert "uploads/ws.md" in out
+        # 默认库搜不到 ws 内容
+        out = c.text(c.call("docs_search", {"query": "WS_ISOLATION_TOKEN"}))
+        assert "no results" in out
+        # ws 库能搜到 + 默认库文档在 ws 库不可见
+        out = c.text(c.call("docs_search", {"query": "WS_ISOLATION_TOKEN", "workspace": "proj-a"}))
+        assert "ws.md" in out
+        out = c.text(c.call("docs_info", {"workspace": "proj-a"}))
+        assert "ws.md" in out and "hello.md" not in out
+        # 物理位置在 home 重定向后的 workspace 目录
+        assert (fake_home / ".docs-search" / "workspaces" / "proj-a" / "docs" / "uploads" / "ws.md").exists()
     finally:
         c.close()
 

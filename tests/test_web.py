@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import HTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -71,7 +72,38 @@ def req(base, path, headers=None):
         return e.code, e.read().decode("utf-8")
 
 
-class TestAuth:
+class TestWorkspaceAPI:
+    """操作级 workspace: 请求带 ?ws=<name> 动态切库,不传 = 默认库"""
+
+    def test_dynamic_isolation(self, server, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        base, _ = server
+        # 默认库: 上传一个文档
+        post(base, "/api/upload?filename=shared.md", "default-content", raw=True)
+        assert get(base, "/api/stats")["count"] == 2  # code/a.md + shared.md
+        # workspace 库: 同名上传独立,互不可见
+        r = post(base, "/api/upload?filename=shared.md&ws=proj-a", "proj-a-content", raw=True)
+        assert r["ok"]
+        # 默认库搜不到 ws 内容,ws 库能搜到
+        assert get(base, "/api/search?q=proj-a-content")["results"] == []
+        hits = get(base, "/api/search?q=proj-a-content&ws=proj-a")
+        assert hits["results"][0]["path"] == "uploads/shared.md"
+        # stats 区分两库
+        assert get(base, "/api/stats")["count"] == 2
+        assert get(base, "/api/stats?ws=proj-a")["count"] == 1
+
+    def test_workspace_delete_isolated(self, server, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        base, _ = server
+        post(base, "/api/upload?filename=a.md&ws=ws1", "one", raw=True)
+        post(base, "/api/upload?filename=a.md&ws=ws2", "two", raw=True)
+        # 只删 ws1 的,ws2 不受影响
+        r = post(base, "/api/delete?path=uploads/a.md&ws=ws1")
+        assert r["ok"]
+        assert get(base, "/api/stats?ws=ws1")["count"] == 0
+        assert get(base, "/api/stats?ws=ws2")["count"] == 1
     def test_no_credentials_rejected(self, server_auth):
         base, _ = server_auth
         status, _ = req(base, "/api/stats")

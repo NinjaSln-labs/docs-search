@@ -46,6 +46,7 @@ from .core import (
     resolve_service_url,
     resolve_upload_target,
     resolve_workspace,
+    resolve_workspace_paths,
     sanitize_filename,
     win_utf8,
 )
@@ -55,6 +56,20 @@ PROTOCOL_VERSION = "2024-11-05"  # MCP protocol revision(与主流 client 兼容
 SERVER_NAME = "docs-search"
 SERVER_VERSION = __version__  # 随包版本单一事实源
 SNIPPET_LEN = 150
+
+WORKSPACE_FIELD = {
+    "type": "string",
+    "description": "Optional workspace (self-contained library namespace). Omit for the default library",
+}
+
+
+def _lib(workspace, docs_dir, db_path):
+    """操作级 workspace: 指定时切到自包含库(忽略默认库路径),否则返回默认 (docs_dir, db_path)"""
+    ws = resolve_workspace(workspace)
+    if not ws:
+        return docs_dir, db_path
+    d, p = resolve_workspace_paths(ws)
+    return d.resolve(), p.resolve()
 
 # ============================================================
 # 工具定义(JSON Schema)— 单一事实源,tools/list 与文档共用
@@ -75,6 +90,7 @@ TOOLS = [
                 "query": {"type": "string", "description": "Keywords, space-separated (AND semantics)"},
                 "limit": {"type": "integer", "description": "Max results (default 8, cap 20)"},
                 "cat": {"type": "string", "description": "Optional category filter (top-level folder name)"},
+                "workspace": WORKSPACE_FIELD,
             },
             "required": ["query"],
         },
@@ -88,7 +104,10 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"path": {"type": "string", "description": "Document relative path"}},
+            "properties": {
+                "path": {"type": "string", "description": "Document relative path"},
+                "workspace": WORKSPACE_FIELD,
+            },
             "required": ["path"],
         },
     },
@@ -113,6 +132,7 @@ TOOLS = [
                     "enum": ["error", "overwrite", "keep"],
                     "description": "Same-name conflict policy (default error)",
                 },
+                "workspace": WORKSPACE_FIELD,
             },
             "required": ["filename", "content"],
         },
@@ -125,7 +145,10 @@ TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"path": {"type": "string", "description": "Document relative path (must be uploads/...)"}},
+            "properties": {
+                "path": {"type": "string", "description": "Document relative path (must be uploads/...)"},
+                "workspace": WORKSPACE_FIELD,
+            },
             "required": ["path"],
         },
     },
@@ -141,6 +164,7 @@ TOOLS = [
             "properties": {
                 "mode": {"type": "string", "enum": ["list", "stats"], "description": "list (default) or stats"},
                 "cat": {"type": "string", "description": "Optional category filter (list mode only)"},
+                "workspace": WORKSPACE_FIELD,
             },
         },
     },
@@ -160,6 +184,7 @@ def _err(text: str) -> dict:
 
 
 def _search(docs_dir, db_path, args: dict) -> dict:
+    docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     query = str(args.get("query") or "").strip()
     if not query:
         return _err("请输入关键词(query 为空)")
@@ -195,6 +220,7 @@ def _search(docs_dir, db_path, args: dict) -> dict:
 
 
 def _read(docs_dir, db_path, args: dict) -> dict:
+    docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     p = str(args.get("path") or "").strip()
     if not p:
         return _err("缺少 path 参数")
@@ -210,6 +236,7 @@ def _read(docs_dir, db_path, args: dict) -> dict:
 
 
 def _write(docs_dir, db_path, args: dict) -> dict:
+    docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     filename = sanitize_filename(str(args.get("filename") or ""))
     if not filename:
         return _err("文件名非法(仅支持 .md 且不含路径部分,如 session-2026-09-07.md)")
@@ -232,6 +259,7 @@ def _write(docs_dir, db_path, args: dict) -> dict:
 
 
 def _delete(docs_dir, db_path, args: dict) -> dict:
+    docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     rel = str(args.get("path") or "").replace("\\", "/")
     uploads_root = (docs_dir / "uploads").resolve()
     target = (docs_dir / rel).resolve()
@@ -249,6 +277,7 @@ def _delete(docs_dir, db_path, args: dict) -> dict:
 
 
 def _info(docs_dir, db_path, args: dict) -> dict:
+    docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     mode = str(args.get("mode") or "list")
     cat = str(args.get("cat") or "")
     ensure_index(docs_dir, db_path)
@@ -298,7 +327,7 @@ def _remote_search(client, args: dict) -> dict:
         limit = 8
     limit = max(1, min(limit, 20))
     cat = str(args.get("cat") or "")
-    data = client.search(query, cat or None)
+    data = client.search(query, cat or None, workspace=args.get("workspace"))
     if "error" in data:
         return _err(str(data["error"]))
     results = (data.get("results") or [])[:limit]
@@ -314,7 +343,7 @@ def _remote_read(client, args: dict) -> dict:
     p = str(args.get("path") or "").strip()
     if not p:
         return _err("缺少 path 参数")
-    data = client.show(p)
+    data = client.show(p, workspace=args.get("workspace"))
     if "error" in data:
         return _err(f"文档不存在: {p}(先 docs_info mode=list 获取准确相对路径)")
     title, body, size, cat_val = data.get("title", ""), data.get("body", ""), data.get("size", 0), data.get("cat", "")
@@ -334,7 +363,7 @@ def _remote_write(client, args: dict) -> dict:
         return _err(f"未知 if_exists 取值: {if_exists!r}（可选: error/overwrite/keep）")
     if len(content.encode("utf-8")) > MAX_UPLOAD_BYTES:
         return _err(f"内容过大(上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
-    data = client.upload(filename, content, if_exists)
+    data = client.upload(filename, content, if_exists, workspace=args.get("workspace"))
     if "error" in data:
         return _err(f"上传失败: {data['error']}")
     verb = "overwrote" if if_exists == "overwrite" else "written"
@@ -345,7 +374,7 @@ def _remote_delete(client, args: dict) -> dict:
     rel = str(args.get("path") or "").replace("\\", "/")
     if not rel:
         return _err("缺少 path 参数")
-    data = client.delete(rel)
+    data = client.delete(rel, workspace=args.get("workspace"))
     if "error" in data:
         return _err(str(data["error"]))
     return _ok(f"deleted: {rel}(库内共 {data.get('count', '?')} 篇)")
@@ -355,13 +384,13 @@ def _remote_info(client, args: dict) -> dict:
     mode = str(args.get("mode") or "list")
     cat = str(args.get("cat") or "")
     if mode == "stats":
-        data = client.stats()
+        data = client.stats(workspace=args.get("workspace"))
         if "error" in data:
             return _err(str(data["error"]))
         return _ok(json.dumps(
             {"count": data.get("count", "?"), "updated": data.get("updated", "?"), "categories": data.get("categories", [])},
             ensure_ascii=False))
-    data = client.list(cat or None)
+    data = client.list(cat or None, workspace=args.get("workspace"))
     if "error" in data:
         return _err(str(data["error"]))
     docs = data.get("docs") or []
@@ -461,8 +490,7 @@ def main():
     )
     parser.add_argument("dir_pos", nargs="?", default=None, help="文档根目录(默认 ./docs 或 $DOCS_SEARCH_DIR;远程模式忽略)")
     parser.add_argument("--dir", dest="dir", default=None, help="同位置参数,二选一")
-    parser.add_argument("--db", default=None, help="索引库路径(默认 ~/.docs-search[/<workspace>]/<目录哈希>/index.db)")
-    parser.add_argument("--workspace", default=None, help="工作空间名(可选,索引库按 $DOCS_SEARCH_WORKSPACE 分割;不填=默认库)")
+    parser.add_argument("--db", default=None, help="索引库路径(默认 ~/.docs-search/<目录哈希>/index.db)")
     parser.add_argument(
         "--url", default=None,
         help="连接已运行的 docs-search 服务(如 http://192.168.1.10:8765);提供后走远程模式,不读本地目录。"
@@ -503,7 +531,7 @@ def main():
         return
 
     docs_dir = resolve_docs_dir(args.dir or args.dir_pos)
-    db_path = resolve_db_path(docs_dir, args.db, resolve_workspace(args.workspace))
+    db_path = resolve_db_path(docs_dir, args.db)
 
     if not docs_dir.exists():
         # 警告走 stderr(stdio 保持协议纯净);目录照常创建,空库可通过 docs_info 观察

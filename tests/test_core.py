@@ -207,29 +207,46 @@ class TestUploadTarget:
 
 
 class TestWorkspace:
-    def test_default_none(self, monkeypatch):
-        monkeypatch.delenv("DOCS_SEARCH_WORKSPACE", raising=False)
-        assert core.resolve_workspace(None) is None
+    """操作级 workspace: 自包含库 ~/.docs-search/workspaces/<ws>/（docs 目录 + index.db）"""
 
-    def test_explicit_beats_env(self, monkeypatch):
-        monkeypatch.setenv("DOCS_SEARCH_WORKSPACE", "env-ws")
-        assert core.resolve_workspace("cli-ws") == "cli-ws"
-        assert core.resolve_workspace(None) == "env-ws"
+    def test_default_none(self):
+        assert core.resolve_workspace(None) is None
+        assert core.resolve_workspace("") is None
+
+    def test_explicit_kept(self):
+        assert core.resolve_workspace("proj-a") == "proj-a"
+        assert core.resolve_workspace(" proj-a ") == "proj-a"
 
     def test_unsafe_chars_sanitized(self):
         assert core.resolve_workspace("../etc/passwd") == "_etc_passwd"
         assert core.resolve_workspace("a\\b: c") == "a_b_ c"
 
-    def test_db_path_gains_workspace_layer(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("DOCS_SEARCH_DB", raising=False)
-        plain = core.resolve_db_path(tmp_path)
-        ws = core.resolve_db_path(tmp_path, workspace="proj-a")
-        assert plain.parent.name != "proj-a"
-        assert ws.parent.parent.name == "proj-a"  # ~/.docs-search/<ws>/<hash>/index.db
-        assert ws.name == plain.name  # 同一目录哈希下的 db 文件名一致
+    def test_self_contained_paths(self):
+        docs, db = core.resolve_workspace_paths("proj-a")
+        parts = docs.parts
+        assert "workspaces" in parts and "proj-a" in parts and parts[-1] == "docs"
+        dparts = db.parts
+        assert "workspaces" in dparts and "proj-a" in dparts and dparts[-1] == "index.db"
 
-    def test_db_workspace_isolates_dirs(self, tmp_path, monkeypatch):
+    def test_workspace_ignores_dir_explicit(self, tmp_path):
+        """workspace 优先: 指定后 --dir 被忽略,库自包含"""
+        docs, db = core.resolve_paths(tmp_path / "elsewhere", workspace="proj-a")
+        assert "workspaces" in docs.parts and docs.parts[-2] == "proj-a"
+        assert "workspaces" in db.parts and db.parts[-2] == "proj-a"
+
+    def test_default_paths_unchanged(self, tmp_path, monkeypatch):
+        """不传 workspace → 默认规则完全不变（旧版兼容）"""
         monkeypatch.delenv("DOCS_SEARCH_DB", raising=False)
-        d1, d2 = tmp_path / "a", tmp_path / "b"
-        assert core.resolve_db_path(d1, workspace="w1") != core.resolve_db_path(d2, workspace="w1")
-        assert core.resolve_db_path(d1, workspace="w1") != core.resolve_db_path(d1, workspace="w2")
+        docs, db = core.resolve_paths(tmp_path)
+        assert docs == core.resolve_docs_dir(tmp_path)
+        assert db == core.resolve_db_path(docs)
+
+    def test_workspaces_isolated(self):
+        d1, db1 = core.resolve_workspace_paths("w1")
+        d2, db2 = core.resolve_workspace_paths("w2")
+        assert d1 != d2 and db1 != db2
+
+    def test_db_explicit_overrides_workspace(self, tmp_path):
+        docs, db = core.resolve_paths(tmp_path, db_explicit=str(tmp_path / "x.db"), workspace="proj-a")
+        assert db == (tmp_path / "x.db").resolve()
+        assert "workspaces" in docs.parts and docs.parts[-2] == "proj-a"

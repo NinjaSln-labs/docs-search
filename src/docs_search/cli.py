@@ -10,8 +10,9 @@
 
 路径规则（不绑定任何本地路径）:
   文档目录: --dir > 环境变量 DOCS_SEARCH_DIR > ./docs
-  索引库:   --db > 环境变量 DOCS_SEARCH_DB > ~/.docs-search[/<工作空间>]/<目录哈希>/index.db
-           （可选 --workspace / $DOCS_SEARCH_WORKSPACE 按命名空间分割，不填=默认库）
+  索引库:   --db > 环境变量 DOCS_SEARCH_DB > ~/.docs-search/<目录哈希>/index.db
+  工作空间: 每次命令可带 --workspace（操作级）→ 自包含库 ~/.docs-search/workspaces/<ws>/，
+           不填=默认库
 
 跨平台: Windows / macOS / Linux
 """
@@ -27,8 +28,7 @@ from .core import (
     ensure_index,
     get_conn,
     load_meta,
-    resolve_db_path,
-    resolve_docs_dir,
+    resolve_paths,
     resolve_upload_target,
     resolve_workspace,
     sanitize_filename,
@@ -40,9 +40,11 @@ ALIAS = {"i": "index", "s": "search", "st": "status", "l": "list", "sh": "show",
 
 
 def _paths(args):
-    docs_dir = resolve_docs_dir(getattr(args, "dir", None))
-    db_path = resolve_db_path(docs_dir, getattr(args, "db", None), resolve_workspace(getattr(args, "workspace", None)))
-    return docs_dir, db_path
+    return resolve_paths(
+        getattr(args, "dir", None),
+        getattr(args, "db", None),
+        resolve_workspace(getattr(args, "workspace", None)),
+    )
 
 
 def cmd_index(args):
@@ -197,7 +199,7 @@ def main():
         sp = sub.add_parser(name, aliases=aliases, help=help_text)
         sp.add_argument("--dir", default=None, help="文档根目录（默认 ./docs 或 $DOCS_SEARCH_DIR）")
         sp.add_argument("--db", default=None, help="索引库路径（默认 ~/.docs-search[/<workspace>]/<目录哈希>/index.db）")
-        sp.add_argument("--workspace", default=None, help="工作空间名（可选，索引库按 $DOCS_SEARCH_WORKSPACE 分割；不填=默认库）")
+        sp.add_argument("--workspace", default=None, help="工作空间名（操作级，自包含库 ~/.docs-search/workspaces/<ws>/；不填=默认库）")
         return sp
 
     add("index", ["i"], "重建索引")

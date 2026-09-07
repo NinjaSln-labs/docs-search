@@ -6,6 +6,7 @@
 
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import pytest
 
@@ -173,3 +174,23 @@ class TestRemoteAuth:
     def test_partial_basic_credentials_rejected(self):
         with pytest.raises(RemoteError, match="username 与 password"):
             RemoteClient("http://127.0.0.1:1", username="u")
+
+    def test_workspace_passthrough(self, tmp_path, monkeypatch):
+        """workspace 经 ws= query 透传到服务端（远程模式下库由服务端切换）"""
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        base, srv = self._auth_server(tmp_path, AuthConfig())
+        try:
+            c = RemoteClient(base)
+            # 上传到默认库 + workspace 库
+            assert c.upload("f.md", "default-marker\n")["ok"]
+            assert c.upload("f.md", "ws-marker\n", workspace="wx-1")["ok"]
+            # search: 默认找不到 ws,ws 能找到
+            assert c.search("ws-marker")["results"] == []
+            assert c.search("ws-marker", workspace="wx-1")["results"][0]["path"] == "uploads/f.md"
+            # stats / list 区分
+            assert c.stats()["count"] == 2  # a.md + f.md
+            assert c.stats(workspace="wx-1")["count"] == 1
+            assert c.list(workspace="wx-1")["docs"][0]["path"] == "uploads/f.md"
+        finally:
+            srv.shutdown()

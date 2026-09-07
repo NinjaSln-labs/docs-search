@@ -19,8 +19,8 @@ API:
   POST /api/upload?filename=x.md&if_exists=error|overwrite|keep  # 上传文档（同名策略，默认 error 提示）
   POST /api/delete?path=uploads/x.md # 删除 uploads/ 下已上传文档
 
-工作空间（可选）: --workspace <name> 或 $DOCS_SEARCH_WORKSPACE；索引库路径加
-~/.docs-search/<workspace>/ 命名空间层，不填 = 默认库（路径与旧版一致）。
+工作空间（操作级，可选）: 每个 API 请求可带 `ws=<name>` 动态切库——
+自包含库 ~/.docs-search/workspaces/<ws>/（docs + index.db），不传 = 默认库。
 
 认证（远端部署）：--token（Bearer）/ --user+--password（Basic），二选一；
 凭据也可用环境变量 DOCS_SEARCH_TOKEN / DOCS_SEARCH_USER / DOCS_SEARCH_PASSWORD。
@@ -40,7 +40,6 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .core import (
-    ENV_WORKSPACE,
     IF_EXISTS_CHOICES,
     MAX_UPLOAD_BYTES,
     ensure_index,
@@ -50,6 +49,7 @@ from .core import (
     resolve_docs_dir,
     resolve_upload_target,
     resolve_workspace,
+    resolve_workspace_paths,
     sanitize_filename,
     win_utf8,
 )
@@ -336,6 +336,14 @@ def make_handler(docs_dir, db_path, auth=None):
         def _authorized(self):
             return auth_cfg.check(self.headers.get("Authorization"))
 
+        # ---------- 库解析（操作级 workspace: ?ws=<name> 切到自包含库，不传 = 默认库）----------
+        def _lib(self, params):
+            ws = resolve_workspace((params.get("ws") or [""])[0] if params else "")
+            if not ws:
+                return docs_dir, db_path
+            d, p = resolve_workspace_paths(ws)
+            return d.resolve(), p.resolve()
+
         # ---------- GET ----------
         def do_GET(self):
             if not self._authorized():
@@ -350,6 +358,7 @@ def make_handler(docs_dir, db_path, auth=None):
                 self._send(404, "text/plain; charset=utf-8", b"not found")
 
         def _api_get(self, path, params):
+            docs_dir, db_path = self._lib(params)
             if path == "/api/stats":
                 n, _ = ensure_index(docs_dir, db_path)
                 meta = load_meta(db_path)
@@ -437,6 +446,7 @@ def make_handler(docs_dir, db_path, auth=None):
             return self.rfile.read(length), None
 
         def _api_upload(self, params):
+            docs_dir, db_path = self._lib(params)
             filename = sanitize_filename(params.get("filename", [""])[0])
             if not filename:
                 self._json(400, {"error": "文件名非法（仅支持 .md，且不含路径部分）"})
@@ -463,6 +473,7 @@ def make_handler(docs_dir, db_path, auth=None):
             self._json(200, {"ok": True, "path": f"uploads/{target.name}", "count": n})
 
         def _api_delete(self, params):
+            docs_dir, db_path = self._lib(params)
             rel = params.get("path", [""])[0].replace("\\", "/")
             uploads_root = (docs_dir / "uploads").resolve()
             target = (docs_dir / rel).resolve()
@@ -503,7 +514,6 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1，勿暴露公网）")
     parser.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"端口（默认 {DEFAULT_PORT}）")
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
-    parser.add_argument("--workspace", default=None, help=f"工作空间名（可选，索引库按 {ENV_WORKSPACE} 分割；不填=默认库）")
     parser.add_argument("--token", default=None, help=f"启用 Bearer 认证（默认 ${ENV_TOKEN}）")
     parser.add_argument("--user", default=None, help=f"启用 Basic 认证用户名（默认 ${ENV_USER}；与 --password 成对）")
     parser.add_argument("--password", default=None, help=f"Basic 认证密码（默认 ${ENV_PASSWORD}）")
@@ -525,16 +535,13 @@ def main():
         sys.exit(1)
 
     docs_dir = resolve_docs_dir(args.dir)
-    db_path = resolve_db_path(docs_dir, workspace=resolve_workspace(args.workspace))
+    db_path = resolve_db_path(docs_dir)
     if not docs_dir.exists():
         print(f"错误: 文档目录不存在: {docs_dir}")
         print(f"请指定目录参数，或设置环境变量 {('DOCS_SEARCH_DIR')}")
         sys.exit(1)
 
     print(f"文档目录: {docs_dir}")
-    ws = resolve_workspace(args.workspace)
-    if ws:
-        print(f"工作空间: {ws}")
     n, updated = ensure_index(docs_dir, db_path)
     print(f"索引就绪: {n} 个文档{'（已重建）' if updated else ''}")
     if auth.enabled:

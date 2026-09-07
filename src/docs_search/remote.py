@@ -70,7 +70,7 @@ class RemoteClient:
     def _request(self, method, path, query=None, body=None):
         url = self.base + path
         if query:
-            url += "?" + urllib.parse.urlencode(query)
+            url += "?" + urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
         req = urllib.request.Request(url, data=body, method=method)
         if body is not None:
             req.add_header("Content-Type", "text/plain; charset=utf-8")
@@ -107,25 +107,29 @@ class RemoteClient:
             raise RemoteError(f"服务响应格式异常（应为 JSON 对象）: {raw[:120]!r}")
         return data
 
-    def stats(self):
-        return self._request("GET", "/api/stats")
+    def stats(self, workspace=None):
+        return self._request("GET", "/api/stats", {"ws": workspace})
 
-    def search(self, q, cat=None):
-        query = {"q": q}
+    def search(self, q, cat=None, workspace=None):
+        query = {"q": q, "ws": workspace}
         if cat:
             query["cat"] = cat
         return self._request("GET", "/api/search", query)
 
-    def list(self, cat=None):
-        query = {} if not cat else {"cat": cat}
+    def list(self, cat=None, workspace=None):
+        query = {}
+        if cat:
+            query["cat"] = cat
+        if workspace:
+            query["ws"] = workspace
         return self._request("GET", "/api/list", query)
 
-    def show(self, path):
-        return self._request("GET", "/api/show", {"path": path})
+    def show(self, path, workspace=None):
+        return self._request("GET", "/api/show", {"path": path, "ws": workspace})
 
-    def upload(self, filename, content, if_exists="error"):
-        query = {"filename": filename, "if_exists": if_exists}
+    def upload(self, filename, content, if_exists="error", workspace=None):
+        query = {"filename": filename, "if_exists": if_exists, "ws": workspace}
         return self._request("POST", "/api/upload", query, content.encode("utf-8"))
 
-    def delete(self, path):
-        return self._request("POST", "/api/delete", {"path": path})
+    def delete(self, path, workspace=None):
+        return self._request("POST", "/api/delete", {"path": path, "ws": workspace})
