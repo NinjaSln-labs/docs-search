@@ -9,7 +9,7 @@
 {
   "name": "docs-search",
   "pypi": "docs-search",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "runtime": "Python >= 3.10",
   "dependencies": [],
   "license": "MIT",

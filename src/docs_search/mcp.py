@@ -21,6 +21,7 @@ import argparse
 import json
 import sys
 
+from . import __version__
 from .core import (
     MAX_UPLOAD_BYTES,
     dedupe_target,
@@ -36,7 +37,7 @@ from .core import (
 
 PROTOCOL_VERSION = "2024-11-05"  # MCP protocol revision(与主流 client 兼容的基线)
 SERVER_NAME = "docs-search"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = __version__  # 随包版本单一事实源
 SNIPPET_LEN = 150
 
 # ============================================================
