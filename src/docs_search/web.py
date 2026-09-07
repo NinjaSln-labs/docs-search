@@ -298,10 +298,11 @@ def make_handler(docs_dir, db_path):
                 for kw in q.split():
                     conditions.append("(title LIKE ? OR body LIKE ?)")
                     pargs.extend([f"%{kw}%", f"%{kw}%"])
-                sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)} LIMIT 20"
+                sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)}"
                 if cat:
                     sql += " AND cat = ?"
                     pargs.append(cat)
+                sql += " LIMIT 20"
                 rows = c.execute(sql, pargs).fetchall()
                 c.close()
                 results = [

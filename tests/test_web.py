@@ -69,6 +69,14 @@ class TestWebAPI:
         r = get(base, "/api/search?q=TOKEN_ONE")
         assert r["results"][0]["path"] == "code/a.md"
 
+    def test_search_with_cat_filter(self, server):
+        """回归: search+cat 的 SQL 拼接曾把 AND cat 放在 LIMIT 后导致语法错误"""
+        base, _ = server
+        r = get(base, "/api/search?q=TOKEN_ONE&cat=code")
+        assert len(r["results"]) == 1 and r["results"][0]["path"] == "code/a.md"
+        r = get(base, "/api/search?q=TOKEN_ONE&cat=uploads")
+        assert r["results"] == []
+
     def test_list_and_show(self, server):
         base, _ = server
         assert get(base, "/api/list")["docs"][0]["path"] == "code/a.md"
