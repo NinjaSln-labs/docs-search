@@ -7,14 +7,22 @@
   zcode:         Settings → MCP Servers → New MCP Server(stdio,Full configuration 可直接贴 JSON)
   dsh:           cordis.patch.yml 插件行 name: '@deepseek-ai/dsh-mcp-client' → command: docs-search-mcp
 
+两种模式(二选一):
+  本地模式(默认): 读本地文档目录 + 本地 SQLite 索引,零网络。
+    路径: --dir > $DOCS_SEARCH_DIR > ./docs;索引按目录哈希隔离,搜索前自动增量重建。
+  远程模式:       --url http://ip:port(或 $DOCS_SEARCH_URL)连接已运行的 docs-search 服务
+    (docs-search-web 或任意接口相同的服务),不读本地目录、不起本地索引,5 个工具走
+    HTTP 代理到该服务的 /api/*。服务端负责安全防护(上传 .md only/消毒、删除仅限 uploads/)。
+    --url > $DOCS_SEARCH_URL > 本地模式。
+
 协议实现(JSON-RPC 2.0 over stdio,按行分隔——MCP stdio 惯例):
   initialize / notifications/initialized / ping
   tools/list → 5 个工具(docs_search / docs_read / docs_write / docs_delete / docs_info)
-  tools/call → 复用 core 逻辑;业务错误包进 isError 内容,不炸会话;未知方法返回 -32601
+  tools/call → 复用 core 逻辑或代理远程服务;业务错误包进 isError 内容,不炸会话;未知方法返回 -32601
 
-路径规则与 core 一致: --dir > $DOCS_SEARCH_DIR > ./docs;索引按目录哈希隔离,搜索前自动增量重建。
 Windows 编码: 读写一律走 stdin/stdout 的二进制 buffer 显式 UTF-8,不依赖控制台代码页(坑: GBK mojibake)。
-安全: 仅操作 --dir 指定目录;写入只进 uploads/ 并消毒;无网络(纯 stdio,无出站请求)。
+安全: 本地模式仅操作 --dir 指定目录;写入只进 uploads/ 并消毒;远程模式仅向 --url 指定服务发请求,
+     安全防护由服务端强制执行——只连可信服务。
 """
 
 import argparse
@@ -31,9 +39,11 @@ from .core import (
     rebuild_index,
     resolve_db_path,
     resolve_docs_dir,
+    resolve_service_url,
     sanitize_filename,
     win_utf8,
 )
+from .remote import RemoteClient, RemoteError
 
 PROTOCOL_VERSION = "2024-11-05"  # MCP protocol revision(与主流 client 兼容的基线)
 SERVER_NAME = "docs-search"
@@ -257,6 +267,101 @@ HANDLERS = {
 
 
 # ============================================================
+# 远程模式工具实现 — 代理到已运行的 docs-search 服务(HTTP /api/*),
+# 输出格式与本地模式一致,保证各 agent 行为一致
+# ============================================================
+
+def _remote_search(client, args: dict) -> dict:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _err("请输入关键词(query 为空)")
+    try:
+        limit = int(args.get("limit") or 8)
+    except (TypeError, ValueError):
+        limit = 8
+    limit = max(1, min(limit, 20))
+    cat = str(args.get("cat") or "")
+    data = client.search(query, cat or None)
+    if "error" in data:
+        return _err(str(data["error"]))
+    results = (data.get("results") or [])[:limit]
+    if not results:
+        return _ok(f'no results for "{query}"（可减少关键词、换词,或 docs_info 核对）')
+    lines = [f'"{query}" -> {len(results)} results']
+    for r in results:
+        lines.append(f"- {r.get('path')} | {r.get('title', '')}\n  {(r.get('snippet') or '').replace(chr(10), ' ')}")
+    return _ok("\n".join(lines))
+
+
+def _remote_read(client, args: dict) -> dict:
+    p = str(args.get("path") or "").strip()
+    if not p:
+        return _err("缺少 path 参数")
+    data = client.show(p)
+    if "error" in data:
+        return _err(f"文档不存在: {p}(先 docs_info mode=list 获取准确相对路径)")
+    title, body, size, cat_val = data.get("title", ""), data.get("body", ""), data.get("size", 0), data.get("cat", "")
+    head = "" if body.startswith("# ") else f"# {title}\n({data.get('path', p)} | {cat_val} | {size // 1024}KB)\n\n"
+    return _ok(f"{head}{body}")
+
+
+def _remote_write(client, args: dict) -> dict:
+    filename = sanitize_filename(str(args.get("filename") or ""))
+    if not filename:
+        return _err("文件名非法(仅支持 .md 且不含路径部分,如 session-2026-09-07.md)")
+    content = args.get("content")
+    if not isinstance(content, str) or not content.strip():
+        return _err("content 必须是非空文本")
+    if len(content.encode("utf-8")) > MAX_UPLOAD_BYTES:
+        return _err(f"内容过大(上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
+    data = client.upload(filename, content)
+    if "error" in data:
+        return _err(f"上传失败: {data['error']}")
+    return _ok(f"written: {data.get('path')}(库内共 {data.get('count', '?')} 篇,已索引;后续用该路径 docs_read / docs_search)")
+
+
+def _remote_delete(client, args: dict) -> dict:
+    rel = str(args.get("path") or "").replace("\\", "/")
+    if not rel:
+        return _err("缺少 path 参数")
+    data = client.delete(rel)
+    if "error" in data:
+        return _err(str(data["error"]))
+    return _ok(f"deleted: {rel}(库内共 {data.get('count', '?')} 篇)")
+
+
+def _remote_info(client, args: dict) -> dict:
+    mode = str(args.get("mode") or "list")
+    cat = str(args.get("cat") or "")
+    if mode == "stats":
+        data = client.stats()
+        if "error" in data:
+            return _err(str(data["error"]))
+        return _ok(json.dumps(
+            {"count": data.get("count", "?"), "updated": data.get("updated", "?"), "categories": data.get("categories", [])},
+            ensure_ascii=False))
+    data = client.list(cat or None)
+    if "error" in data:
+        return _err(str(data["error"]))
+    docs = data.get("docs") or []
+    if not docs:
+        return _ok(f"empty (remote={client.base})")
+    lines = [f"{len(docs)} docs:"]
+    for d in docs:
+        lines.append(f"- {d.get('path')} | {d.get('title', '')} ({d.get('size', 0) // 1024}KB)")
+    return _ok("\n".join(lines))
+
+
+REMOTE_HANDLERS = {
+    "docs_search": _remote_search,
+    "docs_read": _remote_read,
+    "docs_write": _remote_write,
+    "docs_delete": _remote_delete,
+    "docs_info": _remote_info,
+}
+
+
+# ============================================================
 # JSON-RPC 2.0 over stdio(按行分隔;显式 UTF-8 字节,不依赖控制台代码页)
 # ============================================================
 
@@ -274,7 +379,7 @@ def _reply_error(req_id, code, message):
     _send({"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}})
 
 
-def _dispatch(req: dict, docs_dir, db_path) -> None:
+def _dispatch(req: dict, docs_dir, db_path, client=None) -> None:
     method = req.get("method", "")
     req_id = req.get("id")
     params = req.get("params") or {}
@@ -291,12 +396,18 @@ def _dispatch(req: dict, docs_dir, db_path) -> None:
         _reply(req_id, {"tools": TOOLS})
     elif method == "tools/call":
         name = params.get("name", "")
-        handler = HANDLERS.get(name)
+        handler = (REMOTE_HANDLERS if client is not None else HANDLERS).get(name)
         if not handler:
             _reply_error(req_id, -32602, f"Unknown tool: {name}")
             return
+        args = params.get("arguments") or {}
         try:
-            result = handler(docs_dir, db_path, params.get("arguments") or {})
+            if client is not None:
+                result = handler(client, args)
+            else:
+                result = handler(docs_dir, db_path, args)
+        except RemoteError as e:
+            result = _err(f"远程服务错误: {e}")
         except Exception as e:  # noqa: BLE001 -- 工具错误进内容,不炸会话
             result = _err(f"docs-search 工具执行失败: {e}")
         _reply(req_id, result)
@@ -306,7 +417,7 @@ def _dispatch(req: dict, docs_dir, db_path) -> None:
     # 无 id 的通知(initialized 等)→ 静默忽略
 
 
-def serve(stdin_buf, docs_dir, db_path) -> None:
+def serve(stdin_buf, docs_dir=None, db_path=None, client=None) -> None:
     for raw in stdin_buf:
         line = raw.decode("utf-8", "replace").strip()
         if not line:
@@ -317,19 +428,42 @@ def serve(stdin_buf, docs_dir, db_path) -> None:
             continue  # 非 JSON 行(噪声/日志)忽略,保持 stdio 纯净
         if not isinstance(req, dict):
             continue
-        _dispatch(req, docs_dir, db_path)
+        _dispatch(req, docs_dir, db_path, client)
 
 
 def main():
     win_utf8()
     parser = argparse.ArgumentParser(
         prog="docs-search-mcp",
-        description="docs-search MCP server (stdio) — 供 cursor/zcode/qorder/dsh 等 MCP 客户端对接",
+        description="docs-search MCP server (stdio) — 供 cursor/zcode/qorder/dsh 等 MCP 客户端对接;"
+        "默认本地模式,可用 --url 切远程模式(连接已运行的 docs-search 服务)",
     )
-    parser.add_argument("dir_pos", nargs="?", default=None, help="文档根目录(默认 ./docs 或 $DOCS_SEARCH_DIR)")
+    parser.add_argument("dir_pos", nargs="?", default=None, help="文档根目录(默认 ./docs 或 $DOCS_SEARCH_DIR;远程模式忽略)")
     parser.add_argument("--dir", dest="dir", default=None, help="同位置参数,二选一")
     parser.add_argument("--db", default=None, help="索引库路径(默认 ~/.docs-search/<目录哈希>/index.db)")
+    parser.add_argument(
+        "--url", default=None,
+        help="连接已运行的 docs-search 服务(如 http://192.168.1.10:8765);提供后走远程模式,不读本地目录。"
+        "默认 $DOCS_SEARCH_URL;未配置则为本地模式",
+    )
     args = parser.parse_args()
+
+    url = resolve_service_url(args.url)
+    if url:
+        try:
+            client = RemoteClient(url)
+        except RemoteError as e:
+            print(f"错误: {e}", file=sys.stderr)
+            sys.exit(1)
+        # 启动探活: 服务不可达立刻报错退出(MCP 客户端会展示并自动重启重试),而非挂起无输出
+        try:
+            client.stats()
+        except RemoteError as e:
+            print(f"错误: 无法连接 docs-search 服务({url}): {e}", file=sys.stderr)
+            print("提示: 先启动 docs-search-web,或确认 --url/$DOCS_SEARCH_URL 指向带 /api/* 的服务", file=sys.stderr)
+            sys.exit(1)
+        serve(sys.stdin.buffer, client=client)
+        return
 
     docs_dir = resolve_docs_dir(args.dir or args.dir_pos)
     db_path = resolve_db_path(docs_dir, args.db)

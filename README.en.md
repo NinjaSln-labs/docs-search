@@ -9,7 +9,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **Zero dependencies** — Python stdlib only (3.10+), no pip install required to run
 - **Fast** — SQLite index, retrieval < 50ms
 - **Auto re-index** — detects file changes before every search
-- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH, plug-and-play) + pi extension
+- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH, plug-and-play) + pi extension; local mode or remote mode (`--url` to an already-running service)
 - **Web UI** — built-in search page with drag-and-drop `.md` upload
 - **Multi-corpus isolation** — each docs directory gets its own index; coexist freely
 - **Path-free** — no hardcoded paths; target dir via flag / env var / default
@@ -90,6 +90,15 @@ qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 Exposes 5 tools: `docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`.
 For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row) and the pi extension,
 see the [Agent Integration Guide](docs/MCP.md).
+
+When a docs-search service is already running (local or remote machine, same `/api/*` interface),
+the MCP server can proxy to it instead of reading a local directory:
+
+```bash
+# Cursor (remote mode — service already up / shared library)
+{ "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--url", "http://192.168.1.10:8765"] } } }
+# or via env: DOCS_SEARCH_URL=http://192.168.1.10:8765 docs-search-mcp
+```
 
 ## Security Notes
 

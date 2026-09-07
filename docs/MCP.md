@@ -15,6 +15,40 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 
 环境变量: `DOCS_SEARCH_DIR` 默认文档目录;路径规则与 CLI 一致(`--dir` > 环境变量 > `./docs`)。
 
+## 远程模式（连接已运行的服务）
+
+默认本地模式: MCP server 自己读文档目录、建索引。若**已有 docs-search 服务在运行**
+（本机 `docs-search-web <DIR>`，或其他机器上启动的、接口与 `/api/*` 相同的服务），
+可以让 MCP 直接连它——不读本地目录、不起本地索引，5 个工具全部代理到该服务的 HTTP 接口：
+
+```bash
+docs-search-mcp --url http://192.168.1.10:8765
+# 或环境变量(--url 优先):
+DOCS_SEARCH_URL=http://192.168.1.10:8765 docs-search-mcp
+```
+
+- 工具输出格式与本地模式一致（各 agent 行为不变），后端改为 HTTP 调用服务的 `/api/*`
+  （`docs_search`→search / `docs_read`→show / `docs_write`→upload / `docs_delete`→delete / `docs_info`→list+stats）
+- 地址可写裸 `ip:port`（自动补 `http://`）；`--url` > `$DOCS_SEARCH_URL`，未配置则为本地模式
+- 启动时探活一次（`/api/stats`）：连不上立刻报错退出（MCP 客户端会展示并自动重启重试），不挂起无输出
+- 适用场景：文档库在另一台机器/容器、服务已由他人启动、多 agent 共享同一服务
+- **安全由服务端强制执行**（上传 `.md` only/消毒、删除仅限 `uploads/`）——只连可信服务，配地址前确认网络可达与访问边界
+
+Cursor 远程模式示例：
+
+```json
+{
+  "mcpServers": {
+    "docs-search": {
+      "command": "docs-search-mcp",
+      "args": ["--url", "http://192.168.1.10:8765"]
+    }
+  }
+}
+```
+
+---
+
 ## 暴露的 MCP 工具(5 个)
 
 | 工具 | 参数 | 说明 |
@@ -25,7 +59,8 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 | `docs_delete` | `path`(必须 `uploads/` 下) | 删除已写入文档;库内文档拒绝(设计如此) |
 | `docs_info` | `mode`(`list`/`stats`)、`cat` | 枚举文档 / 统计与分类 |
 
-索引在每次调用前自动增量重建,无需手动维护;多关键词是精确子串 AND 匹配(含中文)。
+本地模式索引在每次调用前自动增量重建,无需手动维护;多关键词是精确子串 AND 匹配(含中文)。
+远程模式不建索引,由已运行的服务端维护。
 
 ---
 
@@ -163,6 +198,8 @@ cp integrations/pi/docs-search.ts .pi/extensions/docs-search.ts
 ```
 
 文档目录解析:`DOCS_SEARCH_DIR` 环境变量 > `./docs`(pi 启动目录)。
+远程模式: 设 `DOCS_SEARCH_URL`(如 `http://192.168.1.10:8765`)时改连已运行的服务
+(`--url` 启动 MCP server,不读本地目录),适合服务已启动/异机共享文档库的场景。
 要求已 `pip install docs-search`;或设 `DOCS_SEARCH_MCP_CMD="python <仓库>/scripts/docs-search-mcp.py"` 指定启动命令。
 改完 `/reload` 热加载;工具名:`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。
 
@@ -176,8 +213,8 @@ cp integrations/pi/docs-search.ts .pi/extensions/docs-search.ts
 
 ## 安全注意
 
-- server 只操作 `--dir` 指定目录;写入仅限 `uploads/` 且文件名消毒(路径穿越降级为 basename)
-- 无鉴权、无网络(纯 stdio);文档库对本机进程可读——**不要写入密钥/隐私原始数据,先脱敏**
+- 本地模式: server 只操作 `--dir` 指定目录;写入仅限 `uploads/` 且文件名消毒(路径穿越降级为 basename);无鉴权、无网络(纯 stdio);文档库对本机进程可读——**不要写入密钥/隐私原始数据,先脱敏**
+- 远程模式: 仅向 `--url`/`$DOCS_SEARCH_URL` 指定的服务发请求,上传/删除防护由服务端强制执行——**只连可信服务**
 - 漏洞勿公开披露:走 [SECURITY.md](SECURITY.md) 的私密报告渠道
 
 ## 反馈

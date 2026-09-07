@@ -1,23 +1,31 @@
 """MCP server 端到端测试(子进程直跑 scripts/docs-search-mcp.py,JSON-RPC 2.0 over stdio)
 
 覆盖: 握手 / 工具清单 / 检索(含 CJK,坑:Windows GBK)/ 读写删 / 守卫 / 未知方法 / 噪声行 / EOF 退出
+以及远程模式(--url 连已运行服务,后端不读本地目录)。
 """
 
 import json
 import subprocess
 import sys
+import threading
+from http.server import HTTPServer
 from pathlib import Path
+
+import pytest
+
+from docs_search.web import make_handler
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "docs-search-mcp.py"
 
 
 class McpClient:
-    """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应"""
+    """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应;支持本地(--dir)与远程(--url)"""
 
-    def __init__(self, docs_dir):
+    def __init__(self, docs_dir=None, url=None):
+        args = ["--url", url] if url else [str(docs_dir)]
         self.proc = subprocess.Popen(
-            [sys.executable, str(SCRIPT), str(docs_dir)],
+            [sys.executable, str(SCRIPT), *args],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -68,6 +76,23 @@ class McpClient:
     def close(self):
         self.proc.stdin.close()
         return self.proc.wait(timeout=10)
+
+
+@pytest.fixture
+def web_server(tmp_path):
+    """已运行的 docs-search 服务(内存 HTTP,契约同 docs-search-web)——远程模式后端"""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "hello.md").write_text("# Hello\n\nunique token FROBNICATOR\n", encoding="utf-8")
+    (docs / "infra").mkdir()
+    (docs / "infra" / "mcp.md").write_text("# MCP\n\n中文检索令牌甲乙丙\n", encoding="utf-8")
+    db = tmp_path / "idx.db"
+    srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db))
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{port}", docs
+    srv.shutdown()
 
 
 def make_corpus(tmp_path):
@@ -205,3 +230,58 @@ def test_missing_docs_dir_creates_empty_library(tmp_path):
         assert "empty" in out
     finally:
         c.close()
+
+
+def test_remote_mode_full_roundtrip(tmp_path, web_server):
+    """远程模式: 不读本地目录,5 工具全部代理到已运行服务;输出格式与本地模式一致"""
+    base, _ = web_server
+    c = McpClient(url=base)
+    try:
+        c.initialize()
+        # 工具清单与本地模式一致
+        resp = c.request("tools/list")
+        names = [t["name"] for t in resp["result"]["tools"]]
+        assert names == ["docs_search", "docs_read", "docs_write", "docs_delete", "docs_info"]
+
+        # 检索: 英文 + CJK,cat 过滤走 HTTP(web.py search+cat SQL 回归)
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
+        assert "hello.md" in out and "1 results" in out
+        out = c.text(c.call("docs_search", {"query": "甲乙丙"}))
+        assert "infra/mcp.md" in out
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR", "cat": "infra"}))
+        assert "no results" in out
+
+        # 全文读取
+        assert "FROBNICATOR" in c.text(c.call("docs_read", {"path": "hello.md"}))
+        resp = c.call("docs_read", {"path": "ghost.md"})
+        assert resp["result"].get("isError") is True and "文档不存在" in resp["result"]["content"][0]["text"]
+
+        # 写入 → 立即可搜
+        out = c.text(c.call("docs_write", {"filename": "remote-session.md", "content": "# R\n\nREMOTE_TOKEN_42\n"}))
+        assert "uploads/remote-session.md" in out
+        assert "REMOTE_TOKEN_42" in c.text(c.call("docs_search", {"query": "REMOTE_TOKEN_42"}))
+
+        # 删除: uploads 内成功,库内文档被服务端守卫拒绝
+        out = c.text(c.call("docs_delete", {"path": "uploads/remote-session.md"}))
+        assert "deleted" in out
+        resp = c.call("docs_delete", {"path": "hello.md"})
+        assert resp["result"].get("isError") is True and "仅允许删除 uploads/" in resp["result"]["content"][0]["text"]
+
+        # info: stats + list(与本地模式同输出格式)
+        out = c.text(c.call("docs_info", {"mode": "stats"}))
+        assert '"count": 2' in out
+        out = c.text(c.call("docs_info", {}))
+        assert "hello.md" in out and "infra/mcp.md" in out
+        out = c.text(c.call("docs_info", {"cat": "infra"}))
+        assert "mcp.md" in out and "hello.md" not in out
+    finally:
+        c.close()
+
+
+def test_remote_mode_unreachable_service(tmp_path):
+    """服务不可达 → 启动探活失败,进程立即退出非零(而非挂起无输出)"""
+    c = McpClient(url="http://127.0.0.1:1")
+    rc = c.proc.wait(timeout=20)
+    err = c.proc.stderr.read().decode("utf-8")
+    assert rc != 0
+    assert "无法连接" in err

@@ -2,6 +2,22 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Added
+
+- **MCP 远程模式**（`docs-search-mcp --url http://ip:port` 或 `$DOCS_SEARCH_URL`）：用户已运行
+docs-search 服务（本机 `docs-search-web` 或其他机器上接口相同的服务）时，不读本地目录、不起本地索引，
+5 个工具全部代理到该服务的 `/api/*`（输出格式与本地模式一致）；地址支持裸 `ip:port`；启动探活
+（连不上立即报错退出，不挂起）；新增 `src/docs_search/remote.py`（纯标准库 urllib 客户端，含
+连接层短重试）；pi 扩展支持 `DOCS_SEARCH_URL` 直连；对接文档 docs/MCP.md 补远程模式节；
+tests 新增 remote 客户端单测 + MCP 远程 E2E + web search+cat 回归（46→62 用例）
+
+### Fixed
+
+- **Web `/api/search` 带 `cat` 参数时 SQL 语法错误**（`AND cat = ?` 被拼在 `LIMIT 20` 之后）——
+  修复并补回归测试（影响 Web UI 分类搜索与 MCP 远程模式的 cat 过滤）
+
 ## [1.1.0] — 2026-09-08
 
 ### Added

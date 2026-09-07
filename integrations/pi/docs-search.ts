@@ -7,6 +7,8 @@
  * 前置: pip install docs-search(提供 docs-search-mcp 命令)
  *       或设 DOCS_SEARCH_MCP_CMD / DOCS_SEARCH_MCP_ARGS 指定启动命令与参数。
  * 目录: DOCS_SEARCH_DIR 环境变量 > ./docs(pi 启动目录)。
+ * 远程模式: 设 DOCS_SEARCH_URL(如 http://192.168.1.10:8765)时改连已运行的 docs-search
+ *       服务(--url 启动 MCP server,不读本地目录),适合服务已启动/异机共享文档库的场景。
  * 安装: 复制到 ~/.pi/agent/extensions/docs-search.ts(全局)或 .pi/extensions/docs-search.ts(项目),
  *       /reload 热加载。详见 docs/MCP.md。
  */
@@ -52,6 +54,8 @@ export default function docsSearchExtension(pi: ExtensionAPI) {
 	const pending = new Map<number, Pending>();
 
 	const docsDir = process.env.DOCS_SEARCH_DIR || "docs";
+	const serviceUrl = process.env.DOCS_SEARCH_URL || "";
+	const target = serviceUrl ? `url ${serviceUrl}` : `dir ${docsDir}`;
 
 	function ensureServer(): ChildProcess {
 		if (proc && proc.exitCode === null) {
@@ -60,7 +64,10 @@ export default function docsSearchExtension(pi: ExtensionAPI) {
 		spawnError = null;
 		const cmd = process.env.DOCS_SEARCH_MCP_CMD || "docs-search-mcp";
 		const extraArgs = (process.env.DOCS_SEARCH_MCP_ARGS || "").split(" ").filter(Boolean);
-		const child = spawn(cmd, [...extraArgs, "--dir", docsDir], {
+		const args = serviceUrl
+			? [...extraArgs, "--url", serviceUrl]
+			: [...extraArgs, "--dir", docsDir];
+		const child = spawn(cmd, args, {
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 
@@ -124,7 +131,7 @@ export default function docsSearchExtension(pi: ExtensionAPI) {
 
 	const wrap = (tool: string) => async (_toolCallId: string, params: Record<string, unknown>) => ({
 		content: [{ type: "text" as const, text: await call(tool, params) }],
-		details: { server: "docs-search", dir: docsDir },
+		details: { server: "docs-search", target },
 	});
 
 	pi.registerTool({

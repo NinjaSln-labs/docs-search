@@ -14,7 +14,7 @@
   "dependencies": [],
   "license": "MIT",
   "entry_points": ["docs-search", "docs-search-web", "docs-search-mcp"],
-  "network": "无出站请求；HTTP 服务仅绑定 127.0.0.1"
+  "network": "本地模式无出站请求(纯 stdio),HTTP 服务默认仅绑定 127.0.0.1;MCP 远程模式(--url/$DOCS_SEARCH_URL)会向指定服务发 HTTP 请求"
 }
 ```
 
@@ -87,7 +87,9 @@ curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类�
 
 - 工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`（参数与语义同 §4.1–§4.4）
 - 协议：JSON-RPC 2.0 over stdio，按行分隔；搜索前自动增量重建，无需手动维护索引
-- pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server
+- 两种模式：本地模式（`--dir`，读本地目录，零网络）；远程模式（`--url http://ip:port` 或
+  `$DOCS_SEARCH_URL`，代理到已运行的 docs-search 服务，不读本地目录——服务已启动/异机共享时用）
+- pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server（远程模式设 `DOCS_SEARCH_URL`）
 
 五家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：
 

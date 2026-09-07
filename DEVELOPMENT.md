@@ -8,6 +8,7 @@ src/docs_search/
   cli.py      # 命令行入口（index/search/list/show/status/upload/open）
   web.py      # HTTP 服务 + Web UI（含 /api/upload、/api/delete）
   mcp.py      # MCP stdio server（JSON-RPC 2.0，供 cursor/zcode/qorder/dsh 对接，见 docs/MCP.md）
+  remote.py   # 远程服务客户端（urllib，MCP 远程模式代理到已运行的 docs-search 服务）
 integrations/ # 非 MCP 协议的 agent 桥接（pi extension）
 scripts/      # 瘦包装直跑入口（优先用已安装包，回退 src/）
 tests/        # pytest：单元 + CLI/MCP E2E（子进程）+ Web API（内存 HTTP）
@@ -31,6 +32,7 @@ python -m pytest tests/test_mcp.py                      # 只跑 MCP E2E
 
 - 文档目录：`--dir` > `$DOCS_SEARCH_DIR` > `./docs`
 - 索引库：`--db` > `$DOCS_SEARCH_DB` > `~/.docs-search/<目录哈希>/index.db`
+- 远程服务（MCP 远程模式）：`--url` > `$DOCS_SEARCH_URL`；未配置则为本地模式
 - **禁止**在源码中出现任何个人/本机绝对路径（测试 `test_no_hardcoded_paths` 会拦截）
 
 ## 设计约束

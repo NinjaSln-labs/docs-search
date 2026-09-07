@@ -4,6 +4,8 @@
   文档目录:  --dir 参数 > 环境变量 DOCS_SEARCH_DIR > ./docs（当前工作目录下）
   索引库:    --db 参数 > 环境变量 DOCS_SEARCH_DB > ~/.docs-search/<目录哈希>/index.db
              按文档目录哈希隔离，多个文档库可并存互不干扰。
+  远程服务:  --url 参数 > 环境变量 DOCS_SEARCH_URL（可选；配置后走远程模式，
+             不读本地目录，改连已运行的 docs-search 服务，见 remote.py）
 """
 
 import hashlib
@@ -17,6 +19,7 @@ from pathlib import Path
 
 ENV_DOCS_DIR = "DOCS_SEARCH_DIR"
 ENV_DB_PATH = "DOCS_SEARCH_DB"
+ENV_SERVICE_URL = "DOCS_SEARCH_URL"
 DEFAULT_DOCS_DIRNAME = "docs"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 上传体积上限 10MB
 
@@ -43,6 +46,12 @@ def resolve_docs_dir(explicit=None):
     else:
         p = Path.cwd() / DEFAULT_DOCS_DIRNAME
     return p.resolve()
+
+
+def resolve_service_url(explicit=None):
+    """解析远程服务地址: --url > $DOCS_SEARCH_URL;未配置返回 None(本地模式)"""
+    val = explicit or os.environ.get(ENV_SERVICE_URL) or ""
+    return val.strip() or None
 
 
 def resolve_db_path(docs_dir, explicit=None):
