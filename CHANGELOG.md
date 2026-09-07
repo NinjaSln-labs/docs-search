@@ -6,6 +6,14 @@
 
 ### Added
 
+- **MCP stdio server**（`docs-search-mcp`，`src/docs_search/mcp.py`）：零依赖纯标准库实现
+  JSON-RPC 2.0 over stdio，暴露 5 个工具（docs_search / docs_read / docs_write / docs_delete / docs_info），
+  一份实现同时对接 Cursor（mcp.json）/ ZCode（MCP Servers 表单或 mcpServers JSON）/ Qoder（`qoder mcp add`）/
+  DSH（`@deepseek-ai/dsh-mcp-client` 插件行）等 MCP 客户端；stdio 读写走二进制 buffer 显式 UTF-8（Windows GBK 坑）；
+  pi 无内置 MCP，补 `integrations/pi/docs-search.ts` 扩展子进程桥接同一 server（`pi.registerTool` 五工具）；
+  对接文档 `docs/MCP.md`（各 agent 配置均按官方文档核实）；tests/test_mcp.py +5 用例（含 CJK/守卫/噪声行/EOF）；
+  实机验证：pi（extension）+ dsh 0.1.2-alpha.4（headless profile，insert patch 形状）+ Cursor Agent CLI
+  （非交互 --trust --yolo）三方同语料库结果一致（搜「上传」3 命中，首条 AGENT-GUIDE.md）
 - 发布链路：TestPyPI 灰度作业（workflow_dispatch）+ tag↔pyproject 版本守卫 + twine check；
   GitHub Environments pypi/testpypi（required reviewers + `v*` tag 部署策略）
 - TestPyPI 灰度发布 1.0.0 成功（whl 18.5KB / sdist 22KB），实机 venv 安装 smoke 通过

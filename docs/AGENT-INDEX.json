@@ -21,7 +21,21 @@
     "install": {
       "pypi": "pip install docs-search",
       "from_source": "python scripts/docs-search.py --help（scripts/ 瘦包装，优先用已安装包，回退 src/）",
-      "entry_points": ["docs-search (CLI)", "docs-search-web (HTTP 服务)"]
+      "entry_points": ["docs-search (CLI)", "docs-search-web (HTTP 服务)", "docs-search-mcp (MCP stdio server)"]
+    },
+
+    "mcp": {
+      "command": "docs-search-mcp",
+      "transport": "stdio",
+      "protocol": "JSON-RPC 2.0（按行分隔）；protocolVersion 2024-11-05",
+      "guide": "/MCP.md（含 cursor/zcode/qorder/dsh/pi 五家配置）",
+      "tools": {
+        "docs_search": { "args": { "query": "必填，多关键词空格分隔 AND", "limit": "默认 8，上限 20", "cat": "可选分类过滤" } },
+        "docs_read": { "args": { "path": "必填，相对路径" } },
+        "docs_write": { "args": { "filename": "必填，仅 .md basename", "content": "必填，UTF-8 文本 ≤10MB" }, "note": "写入 uploads/ 并即刻索引；同名自动 -1/-2" },
+        "docs_delete": { "args": { "path": "必须位于 uploads/ 下" } },
+        "docs_info": { "args": { "mode": "list（默认）或 stats", "cat": "list 模式可选过滤" } }
+      }
     },
 
     "invocation": {
@@ -85,6 +99,7 @@
   ],
 
   "documents": [
+    { "id": "mcp-guide", "title": "Agent 接入指南（MCP）", "path": "/MCP.md", "url": "https://ninjasln-labs.github.io/docs-search/MCP.md", "audience": "agent" },
     { "id": "human-guide", "title": "人类使用手册", "path": "/HUMAN-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/HUMAN-GUIDE.md", "audience": "human" },
     { "id": "agent-guide", "title": "Agent 操作手册", "path": "/AGENT-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/AGENT-GUIDE.md", "audience": "agent" },
     { "id": "api", "title": "Web API 参考", "path": "/API.md", "url": "https://ninjasln-labs.github.io/docs-search/API.md", "audience": "both" },
@@ -102,8 +117,8 @@
     "api_upload": "curl -X POST 'http://127.0.0.1:8765/api/upload?filename=notes.md' --data-binary @notes.md"
   },
 
-  "verification": {
-    "test_suite": "python scripts/verify.py（ruff + pytest，41 用例：core 单元 + CLI E2E 子进程 + Web API 内存 HTTP）",
+    "verification": {
+    "test_suite": "python scripts/verify.py（ruff + pytest，46 用例：core 单元 + CLI E2E 子进程 + Web API 内存 HTTP + MCP stdio E2E）",
     "ci": "GitHub Actions：ubuntu/windows × Python 3.10/3.13，actions SHA 固定",
     "audit": "repo-audit python-app 25/25 规则，100/100 (A)"
   },

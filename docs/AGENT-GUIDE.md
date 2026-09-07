@@ -13,7 +13,7 @@
   "runtime": "Python >= 3.10",
   "dependencies": [],
   "license": "MIT",
-  "entry_points": ["docs-search", "docs-search-web"],
+  "entry_points": ["docs-search", "docs-search-web", "docs-search-mcp"],
   "network": "无出站请求；HTTP 服务仅绑定 127.0.0.1"
 }
 ```
@@ -79,6 +79,20 @@ curl -X POST 'http://127.0.0.1:8765/api/delete?path=uploads/session-2026-09-07.m
 ```bash
 curl 'http://127.0.0.1:8765/api/stats'        # 总数/更新时间/分类列表
 curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类）
+```
+
+### 4.5 MCP 接入（推荐给支持 MCP 的 Agent：Cursor / ZCode / Qoder / DSH）
+
+内置零依赖 MCP stdio server（`docs-search-mcp`），工具逻辑与 HTTP API 同源：
+
+- 工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`（参数与语义同 §4.1–§4.4）
+- 协议：JSON-RPC 2.0 over stdio，按行分隔；搜索前自动增量重建，无需手动维护索引
+- pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server
+
+五家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：
+
+```json
+{ "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }
 ```
 
 ## 5. 错误处理协议

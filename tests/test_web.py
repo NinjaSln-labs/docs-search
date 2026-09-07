@@ -2,12 +2,29 @@
 
 import json
 import threading
+import time
+import urllib.error
 import urllib.request
 from http.server import HTTPServer
 
 import pytest
 
 from docs_search.web import make_handler
+
+
+def _urlopen_retry(req, attempts=3):
+    """Windows 安全软件会间歇性指断 localhost 回环连接（WinError 10053/10054），
+    对连接层错误做短重试；HTTPError（业务状态码）不重试。"""
+    last = None
+    for i in range(attempts):
+        try:
+            return urllib.request.urlopen(req)
+        except urllib.error.HTTPError:
+            raise
+        except (ConnectionAbortedError, ConnectionResetError, urllib.error.URLError) as e:
+            last = e
+            time.sleep(0.05 * (i + 1))
+    raise last
 
 
 @pytest.fixture
@@ -25,7 +42,7 @@ def server(tmp_path):
 
 
 def get(base, path):
-    with urllib.request.urlopen(base + path) as r:
+    with _urlopen_retry(base + path) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -35,7 +52,7 @@ def post(base, path, body=None, raw=False):
         base + path, data=data.encode("utf-8") if isinstance(data, str) else data, method="POST"
     )
     try:
-        with urllib.request.urlopen(req) as r:
+        with _urlopen_retry(req) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         return json.loads(e.read().decode("utf-8"))

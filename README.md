@@ -9,6 +9,7 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 - **零依赖** — 纯 Python 标准库（3.10+），无需 pip install
 - **快** — SQLite FTS 索引，检索 < 50ms
 - **自动索引** — 搜索前自动检测文件变更并增量重建
+- **AI Agent 对接** — 内置 MCP stdio server（Cursor / ZCode / Qoder / DSH 等即插即用）+ pi 扩展
 - **Web UI** — 内置搜索界面 + 拖拽上传 .md 文档
 - **多库隔离** — 不同文档目录各自独立索引，可并存
 - **不绑定路径** — 文档目录由参数/环境变量指定，不写死任何本地路径
@@ -19,6 +20,7 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 **https://ninjasln-labs.github.io/docs-search/**
 
 - [人类使用手册](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md)（安装 / CLI / Web / FAQ）
+- [Agent 接入指南](https://ninjasln-labs.github.io/docs-search/#doc=MCP.md)（MCP server + Cursor / ZCode / Qoder / DSH / pi 配置）
 - [Agent 操作手册](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) + [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json)（机器可读索引）
 - [Web API 参考](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
 
@@ -80,6 +82,22 @@ curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" \
 ```
 
 上传的文件存入 `<文档目录>/uploads/` 并自动进入索引；同名自动加 `-1`、`-2` 后缀。
+
+## AI Agent 接入（MCP）
+
+内置零依赖 MCP stdio server，让 AI agent 直接检索/写入文档库：
+
+```bash
+# Cursor（~/.cursor/mcp.json）
+{ "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }
+
+# Qoder CLI
+qoder mcp add docs-search -- docs-search-mcp --dir /path/to/docs
+```
+
+暴露 5 个工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。
+ZCode（Settings → MCP Servers）、DSH（`@deepseek-ai/dsh-mcp-client` 插件行）配置及 pi 扩展安装，
+见 [Agent 接入指南](docs/MCP.md)。
 
 ## 安全说明 / Security
 

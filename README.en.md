@@ -9,6 +9,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **Zero dependencies** — Python stdlib only (3.10+), no pip install required to run
 - **Fast** — SQLite index, retrieval < 50ms
 - **Auto re-index** — detects file changes before every search
+- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH, plug-and-play) + pi extension
 - **Web UI** — built-in search page with drag-and-drop `.md` upload
 - **Multi-corpus isolation** — each docs directory gets its own index; coexist freely
 - **Path-free** — no hardcoded paths; target dir via flag / env var / default
@@ -16,7 +17,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 
 ## 📖 Documentation
 
-**https://ninjasln-labs.github.io/docs-search/** — [Human Guide](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md) · [Agent Guide](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) · [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json) · [API Reference](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
+**https://ninjasln-labs.github.io/docs-search/** — [Human Guide](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md) · [Agent Integration Guide](https://ninjasln-labs.github.io/docs-search/#doc=MCP.md) · [Agent Guide](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) · [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json) · [API Reference](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
 
 ## Quick Start
 
@@ -73,6 +74,22 @@ curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" --data-binary 
 ```
 
 Uploads land in `<docs dir>/uploads/` and are indexed immediately; duplicate names get `-1`, `-2` suffixes.
+
+## AI Agent Integration (MCP)
+
+A zero-dependency MCP stdio server is built in, so AI agents can search/write the library directly:
+
+```bash
+# Cursor (~/.cursor/mcp.json)
+{ "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }
+
+# Qoder CLI
+qoder mcp add docs-search -- docs-search-mcp --dir /path/to/docs
+```
+
+Exposes 5 tools: `docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`.
+For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row) and the pi extension,
+see the [Agent Integration Guide](docs/MCP.md).
 
 ## Security Notes
 

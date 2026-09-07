@@ -36,6 +36,7 @@ Issues = "https://github.com/ninjasln-labs/docs-search/issues"
 [project.scripts]
 docs-search = "docs_search.cli:main"
 docs-search-web = "docs_search.web:main"
+docs-search-mcp = "docs_search.mcp:main"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "ruff>=0.6"]
