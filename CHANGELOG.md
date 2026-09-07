@@ -12,11 +12,24 @@ docs-search 服务（本机 `docs-search-web` 或其他机器上接口相同的�
 （连不上立即报错退出，不挂起）；新增 `src/docs_search/remote.py`（纯标准库 urllib 客户端，含
 连接层短重试）；pi 扩展支持 `DOCS_SEARCH_URL` 直连；对接文档 docs/MCP.md 补远程模式节；
 tests 新增 remote 客户端单测 + MCP 远程 E2E + web search+cat 回归（46→62 用例）
+- **远端认证（Bearer/Basic）**：后端 `docs-search-web --token <T>`（Bearer）或 `--user/--password`（Basic）
+  二选一启用认证，保护全部路径（含 Web UI），凭据比较用 `hmac.compare_digest`；**监听非回环地址
+  时必须启用认证否则拒绝启动**（防服务裸奔公网）；远程模式侧 `docs-search-mcp --token` /
+  `--user+--password`（环境变量 `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` / `DOCS_SEARCH_PASSWORD` 回退）
+  携带凭据，探活时凭据错误立即报错退出；pi 扩展透传同名环境变量；文档：docs/API.md 认证节、
+  MCP.md 远程认证、DEVELOPMENT 分层边界（后端可独立部署为远端，agent 远程模式纯 HTTP 代理）；
+  tests 新增认证用例 + SQL 注入安全证明（62→75 用例）
 
 ### Fixed
 
 - **Web `/api/search` 带 `cat` 参数时 SQL 语法错误**（`AND cat = ?` 被拼在 `LIMIT 20` 之后）——
   修复并补回归测试（影响 Web UI 分类搜索与 MCP 远程模式的 cat 过滤）
+
+### Security
+
+- **SQL 注入防护确认**：所有查询均为参数化查询（`?` 占位符 + 参数绑定），`q`/`cat`/`path` 等用户输入
+  按字面值处理、不参与 SQL 结构拼接——无注入面；补安全测试证明（`' OR '1'='1`、`DROP TABLE`、
+  `UNION` 等载荷不改变查询结构、库不受损），文档见 docs/API.md「安全（SQL 注入）」节
 
 ## [1.1.0] — 2026-09-08
 

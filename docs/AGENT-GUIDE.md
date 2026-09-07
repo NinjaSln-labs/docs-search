@@ -89,6 +89,8 @@ curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类�
 - 协议：JSON-RPC 2.0 over stdio，按行分隔；搜索前自动增量重建，无需手动维护索引
 - 两种模式：本地模式（`--dir`，读本地目录，零网络）；远程模式（`--url http://ip:port` 或
   `$DOCS_SEARCH_URL`，代理到已运行的 docs-search 服务，不读本地目录——服务已启动/异机共享时用）
+- 远程认证：远端服务启用认证时，`--token`（Bearer）或 `--user/--password`（Basic），
+  环境变量 `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` / `DOCS_SEARCH_PASSWORD` 回退；凭据错误探活即失败退出
 - pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server（远程模式设 `DOCS_SEARCH_URL`）
 
 五家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：

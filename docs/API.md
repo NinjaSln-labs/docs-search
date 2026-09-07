@@ -2,7 +2,7 @@
 
 > HTTP 服务默认监听 `127.0.0.1:8765`（`docs-search-web <DIR> --no-browser` 启动）。
 > 所有响应均为 `application/json; charset=utf-8`，含 CORS 头 `Access-Control-Allow-Origin: *`。
-> 安全提醒：服务无鉴权，仅限本机使用。
+> 安全提醒：默认仅监听回环地址；**监听非回环地址时必须启用认证**，否则服务拒绝启动。
 
 ## 端点总览
 
@@ -204,11 +204,34 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=session-note.md' \
 
 ---
 
+## 认证（远端部署）
+
+默认无认证（仅限回环监听）。作为远端服务部署（`--host 0.0.0.0` 或异机访问）时**必须**启用认证，
+二选一（凭据也可用环境变量 `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` / `DOCS_SEARCH_PASSWORD`）：
+
+```bash
+docs-search-web <DIR> --host 0.0.0.0 --token <TOKEN>            # Bearer
+# 或
+docs-search-web <DIR> --host 0.0.0.0 --user admin --password <P> # Basic
+```
+
+- 启用后**所有路径**（含 Web UI 页面与全部 `/api/*`）均需认证，未带/错带凭据返回 `401`
+  `{"error": "unauthorized（需要认证: Bearer token 或 Basic）"}`，并带 `WWW-Authenticate` 头
+- 凭据比较用 `hmac.compare_digest`（防时序侧信道）；`--token` 与 `--user/--password` 互斥
+- 请求方式：`Authorization: Bearer <token>` 或 `Authorization: Basic <base64(user:password)>`
+- 机器可读配置（MCP 远程模式）见 [MCP.md](MCP.md)
+
 ## 并发与一致性说明
 
 - HTTP 服务为单线程串行处理：同目录下不要再用 CLI 触发 `index`，避免索引锁竞争
 - 搜索/列表/详情前都会做一次增量检测（目录指纹 = 路径:mtime:大小 的哈希），外部直接改文件也会被感知
 - 索引库位置：`~/.docs-search/<目录哈希>/index.db`；重建幂等
+
+## 安全（SQL 注入）
+
+- 所有查询均为**参数化查询**（`?` 占位符 + 参数绑定），`q`/`cat`/`path` 等用户输入按字面值处理，
+  不参与 SQL 结构拼接——无注入面；分类/关键词/路径中的 `'`、`--`、`UNION` 等载荷不会改变查询结构
+- 上传仅限 `.md`、≤10MB、文件名消毒（防路径穿越）；删除仅限 `uploads/` 目录（tests/test_web.py 安全用例覆盖）
 
 ## 版本
 
