@@ -12,7 +12,8 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 - **AI Agent 对接** — 内置 MCP stdio server（Cursor / ZCode / Qoder / DSH 等即插即用）+ pi 扩展；支持本地模式与远程模式（`--url` 连已运行的服务，可配 Bearer/Basic 认证）
 - **远端部署** — `docs-search-web --host 0.0.0.0 --token <T>` 独立启动为远端服务（非回环监听强制认证）；后端与 agent 可分离部署
 - **Web UI** — 内置搜索界面 + 拖拽上传 .md 文档
-- **多库隔离** — 不同文档目录各自独立索引，可并存
+- **多库隔离** — 不同文档目录各自独立索引，可并存；可选 `--workspace` 按命名空间再分割
+- **上传安全** — 同名默认提示冲突，可强制覆盖或自动 `-N` 新文件；`.md` only、≤10MB、消毒
 - **不绑定路径** — 文档目录由参数/环境变量指定，不写死任何本地路径
 - **跨平台** — Windows / macOS / Linux
 

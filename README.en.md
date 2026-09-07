@@ -12,7 +12,8 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH, plug-and-play) + pi extension; local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth)
 - **Remote deployment** — `docs-search-web --host 0.0.0.0 --token <T>` as an independent remote service (non-loopback listening requires auth); backend and agents can be deployed separately
 - **Web UI** — built-in search page with drag-and-drop `.md` upload
-- **Multi-corpus isolation** — each docs directory gets its own index; coexist freely
+- **Multi-corpus isolation** — each docs directory gets its own index; optional `--workspace` adds a namespace layer
+- **Safe uploads** — same-name conflicts default to a hint; force-overwrite or `-N` new file available; `.md` only, ≤10MB, sanitized
 - **Path-free** — no hardcoded paths; target dir via flag / env var / default
 - **Cross-platform** — Windows / macOS / Linux
 

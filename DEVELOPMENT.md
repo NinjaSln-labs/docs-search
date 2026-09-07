@@ -38,8 +38,10 @@ python -m pytest tests/test_mcp.py                      # 只跑 MCP E2E
 ## 路径解析契约（不绑定本地路径）
 
 - 文档目录：`--dir` > `$DOCS_SEARCH_DIR` > `./docs`
-- 索引库：`--db` > `$DOCS_SEARCH_DB` > `~/.docs-search/<目录哈希>/index.db`
+- 索引库：`--db` > `$DOCS_SEARCH_DB` > `~/.docs-search[/<workspace>]/<目录哈希>/index.db`；
+  workspace（`--workspace` / `$DOCS_SEARCH_WORKSPACE`）可选，不填=默认库，路径与旧版一致
 - 远程服务（MCP 远程模式）：`--url` > `$DOCS_SEARCH_URL`；未配置则为本地模式
+- 上传同名策略 `if_exists`：`error`（默认，提示不写）> `overwrite`（覆盖）> `keep`（`-N` 新文件）
 - **禁止**在源码中出现任何个人/本机绝对路径（测试 `test_no_hardcoded_paths` 会拦截）
 
 ## 设计约束

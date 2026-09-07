@@ -12,9 +12,18 @@
 | GET  | `/api/search` | 关键词搜索 |
 | GET  | `/api/list`   | 枚举文档 |
 | GET  | `/api/show`   | 取文档全文 |
-| POST | `/api/upload?filename=x.md` | 上传文档 |
+| POST | `/api/upload?filename=x.md&if_exists=error\|overwrite\|keep` | 上传文档（同名策略，默认 error 提示） |
 | POST | `/api/delete?path=uploads/x.md` | 删除已上传文档 |
 | GET  | `/`           | Web UI（HTML） |
+
+---
+
+## 工作空间（Workspace，可选）
+
+`docs-search-web <DIR> --workspace <name>`（或环境变量 `DOCS_SEARCH_WORKSPACE`）按命名空间分割索引库：
+索引库路径变为 `~/.docs-search/<workspace>/<目录哈希>/index.db`，不同 workspace 天然隔离；
+不填 = 默认库（`~/.docs-search/<目录哈希>/index.db`，与旧版路径一致）。同一 `--dir` 在不同
+workspace 下互不共享索引/上传（uploads/ 仍在文档目录内，随目录共享）。
 
 ---
 
@@ -145,13 +154,22 @@ curl 'http://127.0.0.1:8765/api/search?q=上传&cat=uploads'
 - 单文件 ≤ 10MB（超出返回 413）
 - 内容必须可按 UTF-8 解码（否则 400）
 - 危险字符（`\\/:*?"<>|` 与控制符）替换为 `_`；路径穿越降级为 basename
-- 目标固定落在 `<文档目录>/uploads/`；同名自动 `-1` … `-999` 去重
+- 目标固定落在 `<文档目录>/uploads/`；同名冲突策略由 `if_exists` 决定
+  （`error` 默认提示 / `overwrite` 强制覆盖 / `keep` 生成 `-1` … `-999` 新文件）
+
+**参数**
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `filename` | 必填 | 目标文件名（仅 `.md`，自动消毒） |
+| `if_exists` | `error` | 同名冲突策略：`error`（提示不写）/ `overwrite`（覆盖）/ `keep`（`-N` 新文件） |
 
 **示例**
 
 ```bash
 curl -X POST 'http://127.0.0.1:8765/api/upload?filename=session-note.md' \
      --data-binary @session-note.md
+# 同名冲突时: 默认 error → 409; 覆盖: ?filename=x.md&if_exists=overwrite; 新文件: ?filename=x.md&if_exists=keep
 ```
 
 **成功响应**
@@ -160,15 +178,17 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=session-note.md' \
 { "ok": true, "path": "uploads/session-note.md", "count": 136 }
 ```
 
-`path` 是落盘后的真实相对路径（重名时带序号），后续删除/检索以它为准。上传即重建索引，立即可搜。
+`path` 是落盘后的真实相对路径（重名 keep 时带序号），后续删除/检索以它为准。上传即重建索引，立即可搜。
 
 **错误**
 
 | 状态码 | 响应 | 条件 |
 |--------|------|------|
 | 400 | `{"error": "文件名非法（仅支持 .md，且不含路径部分）"}` | filename 缺失/非 .md/超长 |
+| 400 | `{"error": "未知 if_exists 取值..."}` | if_exists 不是 error/overwrite/keep |
 | 400 | `{"error": "empty body"}` | 请求体为空 |
 | 400 | `{"error": "文件必须是 UTF-8 文本"}` | body 无法按 UTF-8 解码 |
+| 409 | `{"error": "文件已存在: uploads/x.md（同名冲突——传 if_exists=overwrite 覆盖,或 if_exists=keep 生成 -N 新文件）"}` | 同名且策略为默认 error |
 | 413 | `{"error": "文件过大（上限 10MB）"}` | Content-Length 超 10MB 或缺 Content-Length(411) |
 
 ---

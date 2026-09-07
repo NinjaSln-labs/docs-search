@@ -14,6 +14,7 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 ```
 
 环境变量: `DOCS_SEARCH_DIR` 默认文档目录;路径规则与 CLI 一致(`--dir` > 环境变量 > `./docs`)。
+可选 `DOCS_SEARCH_WORKSPACE`（或 `--workspace <name>`）按命名空间分割索引库,不填=默认库。
 
 ## 远程模式（连接已运行的服务）
 
@@ -61,7 +62,7 @@ Cursor 远程模式示例：
 |---|---|---|
 | `docs_search` | `query`(必填,空格分隔多关键词 AND)、`limit`、`cat` | 检索,返回路径 + 150 字摘要;全文跟 `docs_read` |
 | `docs_read` | `path`(必填,相对路径) | 读全文 |
-| `docs_write` | `filename`(仅 `.md`)、`content` | 写入 `uploads/` 并即刻索引;同名自动 `-1/-2`;**勿写密钥/隐私** |
+| `docs_write` | `filename`(仅 `.md`)、`content`、`if_exists`(`error`/`overwrite`/`keep`) | 写入 `uploads/` 并即刻索引;同名默认提示(`error`,不写不覆盖),`overwrite` 强制覆盖,`keep` 生成 `-1/-2` 新文件;**勿写密钥/隐私** |
 | `docs_delete` | `path`(必须 `uploads/` 下) | 删除已写入文档;库内文档拒绝(设计如此) |
 | `docs_info` | `mode`(`list`/`stats`)、`cat` | 枚举文档 / 统计与分类 |
 
