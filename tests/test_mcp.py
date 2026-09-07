@@ -13,17 +13,22 @@ from pathlib import Path
 
 import pytest
 
-from docs_search.web import make_handler
+from docs_search.web import AuthConfig, make_handler
 
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "docs-search-mcp.py"
 
 
 class McpClient:
-    """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应;支持本地(--dir)与远程(--url)"""
+    """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应;支持本地(--dir)与远程(--url/--token)"""
 
-    def __init__(self, docs_dir=None, url=None):
-        args = ["--url", url] if url else [str(docs_dir)]
+    def __init__(self, docs_dir=None, url=None, token=None):
+        if url:
+            args = ["--url", url]
+            if token:
+                args += ["--token", token]
+        else:
+            args = [str(docs_dir)]
         self.proc = subprocess.Popen(
             [sys.executable, str(SCRIPT), *args],
             stdin=subprocess.PIPE,
@@ -88,6 +93,21 @@ def web_server(tmp_path):
     (docs / "infra" / "mcp.md").write_text("# MCP\n\n中文检索令牌甲乙丙\n", encoding="utf-8")
     db = tmp_path / "idx.db"
     srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db))
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{port}", docs
+    srv.shutdown()
+
+
+@pytest.fixture
+def web_server_auth(tmp_path):
+    """已运行且启用 Bearer 认证的 docs-search 服务——远程模式 + 认证场景"""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "hello.md").write_text("# Hello\n\nunique token FROBNICATOR\n", encoding="utf-8")
+    db = tmp_path / "idx.db"
+    srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db, AuthConfig(token="tk-e2e")))
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -285,3 +305,23 @@ def test_remote_mode_unreachable_service(tmp_path):
     err = c.proc.stderr.read().decode("utf-8")
     assert rc != 0
     assert "无法连接" in err
+
+
+def test_remote_mode_with_auth_roundtrip(tmp_path, web_server_auth):
+    """远程模式 + Bearer 认证: 正确凭据可用,错误凭据探活直接失败退出"""
+    base, _ = web_server_auth
+    # 正确凭据 → 5 工具可用（抽样验证检索）
+    c = McpClient(url=base, token="tk-e2e")
+    try:
+        c.initialize()
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
+        assert "hello.md" in out and "1 results" in out
+    finally:
+        c.close()
+
+    # 错误凭据 → 启动探活失败,退出非零、报错提示
+    bad = McpClient(url=base, token="wrong-token")
+    rc = bad.proc.wait(timeout=20)
+    err = bad.proc.stderr.read().decode("utf-8")
+    assert rc != 0
+    assert "认证失败" in err

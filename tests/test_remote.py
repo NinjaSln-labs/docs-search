@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from docs_search.remote import RemoteClient, RemoteError, normalize_url
-from docs_search.web import make_handler
+from docs_search.web import AuthConfig, make_handler
 
 
 @pytest.fixture
@@ -124,3 +124,47 @@ def test_non_docs_search_interface_rejected(tmp_path):
             c.stats()
     finally:
         srv.shutdown()
+
+
+class TestRemoteAuth:
+    """远端服务启用认证时,客户端必须携带正确凭据"""
+
+    def _auth_server(self, tmp_path, auth):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# A\n\nSECRET_MARKER\n", encoding="utf-8")
+        db = tmp_path / "idx.db"
+        srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db, auth))
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        return f"http://127.0.0.1:{port}", srv
+
+    def test_bearer_roundtrip(self, tmp_path):
+        base, srv = self._auth_server(tmp_path, AuthConfig(token="tk-123"))
+        try:
+            good = RemoteClient(base, token="tk-123")
+            assert good.stats()["count"] == 1
+            assert good.search("SECRET_MARKER")["results"][0]["path"] == "a.md"
+
+            # 无凭据 / 错凭据 → 明确 401 业务错误
+            bad = RemoteClient(base)
+            assert bad.stats() == {"error": "unauthorized（认证失败——远端启用了认证，检查 --token 或 --user/--password）"}
+            wrong = RemoteClient(base, token="wrong")
+            assert "unauthorized" in wrong.stats()["error"]
+        finally:
+            srv.shutdown()
+
+    def test_basic_roundtrip(self, tmp_path):
+        base, srv = self._auth_server(tmp_path, AuthConfig(username="admin", password="pw"))
+        try:
+            c = RemoteClient(base, username="admin", password="pw")
+            assert c.stats()["count"] == 1
+            assert "unauthorized" in RemoteClient(base).stats()["error"]
+            assert "unauthorized" in RemoteClient(base, username="admin", password="badx").stats()["error"]
+        finally:
+            srv.shutdown()
+
+    def test_partial_basic_credentials_rejected(self):
+        with pytest.raises(RemoteError, match="username 与 password"):
+            RemoteClient("http://127.0.0.1:1", username="u")

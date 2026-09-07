@@ -15,6 +15,9 @@
     HTTP 代理到该服务的 /api/*。服务端负责安全防护(上传 .md only/消毒、删除仅限 uploads/)。
     --url > $DOCS_SEARCH_URL > 本地模式。
 
+远程认证: 服务端启用了认证时,用 --token(Bearer)或 --user/--password(Basic)携带凭据,
+  环境变量回退: $DOCS_SEARCH_TOKEN / $DOCS_SEARCH_USER / $DOCS_SEARCH_PASSWORD。
+
 协议实现(JSON-RPC 2.0 over stdio,按行分隔——MCP stdio 惯例):
   initialize / notifications/initialized / ping
   tools/list → 5 个工具(docs_search / docs_read / docs_write / docs_delete / docs_info)
@@ -27,6 +30,7 @@ Windows 编码: 读写一律走 stdin/stdout 的二进制 buffer 显式 UTF-8,�
 
 import argparse
 import json
+import os
 import sys
 
 from . import __version__
@@ -446,21 +450,36 @@ def main():
         help="连接已运行的 docs-search 服务(如 http://192.168.1.10:8765);提供后走远程模式,不读本地目录。"
         "默认 $DOCS_SEARCH_URL;未配置则为本地模式",
     )
+    parser.add_argument("--token", default=None, help="远程模式 Bearer token(默认 $DOCS_SEARCH_TOKEN)")
+    parser.add_argument("--user", default=None, help="远程模式 Basic 认证用户名(默认 $DOCS_SEARCH_USER;与 --password 成对)")
+    parser.add_argument("--password", default=None, help="远程模式 Basic 认证密码(默认 $DOCS_SEARCH_PASSWORD)")
     args = parser.parse_args()
 
     url = resolve_service_url(args.url)
     if url:
+        token = args.token or os.environ.get("DOCS_SEARCH_TOKEN")
+        user = args.user or os.environ.get("DOCS_SEARCH_USER")
+        password = args.password or os.environ.get("DOCS_SEARCH_PASSWORD")
+        if token and (user or password):
+            print("错误: --token 与 --user/--password 互斥，只能启用一种认证方式", file=sys.stderr)
+            sys.exit(1)
+        if bool(user) != bool(password):
+            print("错误: --user 与 --password 必须成对提供", file=sys.stderr)
+            sys.exit(1)
         try:
-            client = RemoteClient(url)
+            client = RemoteClient(url, token=token, username=user, password=password)
         except RemoteError as e:
             print(f"错误: {e}", file=sys.stderr)
             sys.exit(1)
-        # 启动探活: 服务不可达立刻报错退出(MCP 客户端会展示并自动重启重试),而非挂起无输出
+        # 启动探活: 服务不可达/未授权立刻报错退出(MCP 客户端会展示并自动重启重试),而非挂起无输出
         try:
-            client.stats()
+            probe = client.stats()
         except RemoteError as e:
             print(f"错误: 无法连接 docs-search 服务({url}): {e}", file=sys.stderr)
             print("提示: 先启动 docs-search-web,或确认 --url/$DOCS_SEARCH_URL 指向带 /api/* 的服务", file=sys.stderr)
+            sys.exit(1)
+        if "error" in probe:
+            print(f"错误: 服务探活失败: {probe['error']}", file=sys.stderr)
             sys.exit(1)
         serve(sys.stdin.buffer, client=client)
         return

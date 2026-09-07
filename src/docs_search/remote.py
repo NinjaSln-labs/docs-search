@@ -11,11 +11,15 @@ MCP server 远程模式使用: 用户已运行 docs-search-web（或任意接口
   POST /api/upload?filename= (raw body) -> {"ok", "path", "count"} | {"error": ...}
   POST /api/delete?path=     -> {"ok", "deleted", "count"} | {"error": ...}
 
+认证: 远端服务可启用 Bearer token 或 Basic 认证——客户端用 token / username+password
+构造 Authorization 头（与 web.py 的 AuthConfig 对应）。
+
 错误语义: 业务错误（服务端 JSON error / 非 2xx）返回 dict，不抛异常；
 连接失败/响应格式异常抛 RemoteError。安全防护（.md only、≤10MB、文件名消毒、
 删除仅限 uploads/）由服务端强制执行，客户端原样转发、不绕过——只连可信服务。
 """
 
+import base64
 import json
 import time
 import urllib.parse
@@ -49,10 +53,19 @@ def normalize_url(url):
 class RemoteClient:
     """连接已运行的 docs-search 服务；方法与 /api/* 端点一一对应，返回解析后的 JSON"""
 
-    def __init__(self, base_url):
+    def __init__(self, base_url, token=None, username=None, password=None):
         self.base = normalize_url(base_url)
         if not self.base:
             raise RemoteError(f"非法服务地址: {base_url!r}（应为 http://ip:port 或 http://host:port）")
+        if token:
+            self._auth_header = f"Bearer {token}"
+        elif username is not None or password is not None:
+            if username is None or password is None:
+                raise RemoteError("Basic 认证需要同时提供 username 与 password")
+            raw = f"{username}:{password}".encode()
+            self._auth_header = "Basic " + base64.b64encode(raw).decode("ascii")
+        else:
+            self._auth_header = None
 
     def _request(self, method, path, query=None, body=None):
         url = self.base + path
@@ -61,6 +74,8 @@ class RemoteClient:
         req = urllib.request.Request(url, data=body, method=method)
         if body is not None:
             req.add_header("Content-Type", "text/plain; charset=utf-8")
+        if self._auth_header:
+            req.add_header("Authorization", self._auth_header)
         last = None
         for attempt in range(HTTP_ATTEMPTS):
             try:
@@ -68,11 +83,13 @@ class RemoteClient:
                     raw = resp.read().decode("utf-8")
                 break
             except HTTPError as e:
-                # 业务错误: 服务端以 JSON {"error": ...} 响应（400/403/404/413/500...）
+                # 业务错误: 服务端以 JSON {"error": ...} 响应（400/401/403/404/413/500...）
                 try:
                     data = json.loads(e.read().decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     data = None
+                if e.code == 401:
+                    return {"error": "unauthorized（认证失败——远端启用了认证，检查 --token 或 --user/--password）"}
                 if isinstance(data, dict) and "error" in data:
                     return data
                 return {"error": f"服务端错误(HTTP {e.code})"}
