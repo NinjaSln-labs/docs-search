@@ -39,6 +39,8 @@ from .core import (
     MAX_UPLOAD_BYTES,
     ensure_index,
     get_conn,
+    list_lib,
+    list_workspaces,
     load_meta,
     rebuild_index,
     resolve_db_path,
@@ -48,6 +50,7 @@ from .core import (
     resolve_workspace,
     resolve_workspace_paths,
     sanitize_filename,
+    search_lib,
     win_utf8,
 )
 from .remote import RemoteClient, RemoteError
@@ -64,12 +67,28 @@ WORKSPACE_FIELD = {
 
 
 def _lib(workspace, docs_dir, db_path):
-    """操作级 workspace: 指定时切到自包含库(忽略默认库路径),否则返回默认 (docs_dir, db_path)"""
+    """操作级 workspace: 指定时切到自包含库(忽略默认库路径),否则返回默认 (docs_dir, db_path)（workspace=all 由调用方先拦截）"""
     ws = resolve_workspace(workspace)
     if not ws:
         return docs_dir, db_path
     d, p = resolve_workspace_paths(ws)
     return d.resolve(), p.resolve()
+
+
+def _all_libs(docs_dir, db_path):
+    """workspace=all 聚合: [(workspace 名或 None, docs_dir, db_path), ...]，默认库在前"""
+    libs = [(None, docs_dir, db_path)]
+    for name in list_workspaces():
+        d, p = resolve_workspace_paths(name)
+        libs.append((name, d.resolve(), p.resolve()))
+    return libs
+
+
+def _not_all(args, action):
+    """写/读类操作拒绝 workspace=all，返回错误文本或 None"""
+    if args.get("workspace") == "all":
+        return f"workspace=all 仅支持搜索/列表/统计，不支持{action}"
+    return None
 
 # ============================================================
 # 工具定义(JSON Schema)— 单一事实源,tools/list 与文档共用
@@ -184,6 +203,8 @@ def _err(text: str) -> dict:
 
 
 def _search(docs_dir, db_path, args: dict) -> dict:
+    if args.get("workspace") == "all":
+        return _search_all(docs_dir, db_path, args)
     docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     query = str(args.get("query") or "").strip()
     if not query:
@@ -220,6 +241,9 @@ def _search(docs_dir, db_path, args: dict) -> dict:
 
 
 def _read(docs_dir, db_path, args: dict) -> dict:
+    msg = _not_all(args, "读取")
+    if msg:
+        return _err(msg)
     docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     p = str(args.get("path") or "").strip()
     if not p:
@@ -236,6 +260,9 @@ def _read(docs_dir, db_path, args: dict) -> dict:
 
 
 def _write(docs_dir, db_path, args: dict) -> dict:
+    msg = _not_all(args, "写入")
+    if msg:
+        return _err(msg)
     docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     filename = sanitize_filename(str(args.get("filename") or ""))
     if not filename:
@@ -259,6 +286,9 @@ def _write(docs_dir, db_path, args: dict) -> dict:
 
 
 def _delete(docs_dir, db_path, args: dict) -> dict:
+    msg = _not_all(args, "删除")
+    if msg:
+        return _err(msg)
     docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     rel = str(args.get("path") or "").replace("\\", "/")
     uploads_root = (docs_dir / "uploads").resolve()
@@ -277,6 +307,8 @@ def _delete(docs_dir, db_path, args: dict) -> dict:
 
 
 def _info(docs_dir, db_path, args: dict) -> dict:
+    if args.get("workspace") == "all":
+        return _info_all(docs_dir, db_path, args)
     docs_dir, db_path = _lib(args.get("workspace"), docs_dir, db_path)
     mode = str(args.get("mode") or "list")
     cat = str(args.get("cat") or "")
@@ -310,6 +342,61 @@ HANDLERS = {
     "docs_delete": _delete,
     "docs_info": _info,
 }
+
+
+def _search_all(docs_dir, db_path, args: dict) -> dict:
+    """workspace=all: 跨默认库 + 全部 workspace 搜索，结果带 [workspace] 来源标注"""
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _err("请输入关键词(query 为空)")
+    try:
+        limit = int(args.get("limit") or 8)
+    except (TypeError, ValueError):
+        limit = 8
+    limit = max(1, min(limit, 20))
+    cat = str(args.get("cat") or "")
+    results = []
+    for name, d, p in _all_libs(docs_dir, db_path):
+        for r in search_lib(d, p, query, cat or None, limit):
+            results.append((name, r))
+    if not results:
+        return _ok(f'no results for "{query}"（已搜默认库 + {len(_all_libs(docs_dir, db_path)) - 1} 个 workspace）')
+    lines = [f'"{query}" -> {len(results)} results (workspace=all)']
+    for name, r in results:
+        tag = "" if name is None else f" [{name}]"
+        lines.append(f"- {r['path']}{tag} | {r['title']}\n  {r['snippet']}")
+    return _ok("\n".join(lines))
+
+
+def _info_all(docs_dir, db_path, args: dict) -> dict:
+    """workspace=all: 跨库枚举/统计，结果带 [workspace] 来源标注"""
+    mode = str(args.get("mode") or "list")
+    cat = str(args.get("cat") or "")
+    libs = _all_libs(docs_dir, db_path)
+    if mode == "stats":
+        count, cats = 0, set()
+        for name, d, p in libs:
+            n, _ = ensure_index(d, p)
+            count += load_meta(p).get("count", n)
+            c = get_conn(p)
+            for row in c.execute("SELECT DISTINCT cat FROM docs"):
+                cats.add(row[0])
+            c.close()
+        return _ok(json.dumps(
+            {"count": count, "updated": "?", "categories": sorted(cats),
+             "workspaces": [n for n, _, _ in libs[1:]], "workspace": "all"},
+            ensure_ascii=False))
+    docs = []
+    for name, d, p in libs:
+        for r in list_lib(d, p, cat or None):
+            docs.append((name, r))
+    if not docs:
+        return _ok(f"empty (workspace=all: 默认库 + {len(libs) - 1} 个 workspace)")
+    lines = [f"{len(docs)} docs (workspace=all):"]
+    for name, r in docs:
+        tag = "" if name is None else f" [{name}]"
+        lines.append(f"- {r['path']}{tag} | {r['title']} ({r['size'] // 1024}KB)")
+    return _ok("\n".join(lines))
 
 
 # ============================================================

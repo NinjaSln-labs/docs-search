@@ -63,8 +63,8 @@ def get(base, path):
         return json.loads(r.read().decode("utf-8"))
 
 
-def req(base, path, headers=None):
-    r = urllib.request.Request(base + path, headers=headers or {})
+def req(base, path, headers=None, method=None, data=None):
+    r = urllib.request.Request(base + path, headers=headers or {}, method=method, data=data)
     try:
         with _urlopen_retry(r) as resp:
             return resp.status, resp.read().decode("utf-8")
@@ -104,6 +104,31 @@ class TestWorkspaceAPI:
         assert r["ok"]
         assert get(base, "/api/stats?ws=ws1")["count"] == 0
         assert get(base, "/api/stats?ws=ws2")["count"] == 1
+
+    def test_all_aggregation(self, server, tmp_path, monkeypatch):
+        """ws=all: 跨默认库 + 全部 workspace 搜索/列表/统计,结果带 ws 来源;写操作拒绝"""
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        base, _ = server
+        # 默认库 + 两个 workspace 各一个文档,关键词各不相同
+        post(base, "/api/upload?filename=d.md", "DEFAULT_MARKER", raw=True)
+        post(base, "/api/upload?filename=a1.md&ws=wa", "WS_A_MARKER", raw=True)
+        post(base, "/api/upload?filename=a2.md&ws=wb", "WS_B_MARKER", raw=True)
+        # 聚合搜索: 命中各库内容,带来源
+        r = get(base, "/api/search?q=MARKER&ws=all")
+        assert r["workspace"] == "all"
+        by_ws = {x["ws"]: x["path"] for x in r["results"]}
+        assert by_ws[""] == "uploads/d.md" and by_ws["wa"] == "uploads/a1.md" and by_ws["wb"] == "uploads/a2.md"
+        # 聚合列表/统计
+        r = get(base, "/api/list?ws=all")
+        assert len(r["docs"]) == 4 and {x["ws"] for x in r["docs"]} == {"", "wa", "wb"}
+        r = get(base, "/api/stats?ws=all")
+        assert r["count"] == 4 and r["workspaces"] == ["wa", "wb"] and r["workspace"] == "all"
+        # 写操作拒绝 all
+        status, body = req(base, "/api/upload?filename=x.md&ws=all", method="POST", data=b"x")
+        assert status == 400 and "仅支持搜索/列表/统计" in body
+        status, _ = req(base, "/api/delete?path=uploads/x.md&ws=all", method="POST")
+        assert status == 400
     def test_no_credentials_rejected(self, server_auth):
         base, _ = server_auth
         status, _ = req(base, "/api/stats")

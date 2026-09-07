@@ -242,6 +242,48 @@ def ensure_index(docs_dir, db_path):
 
 
 # ============================================================
+# 库级查询助手（单库搜索/枚举；workspace=all 聚合时复用）
+# ============================================================
+def search_lib(docs_dir, db_path, query, cat=None, limit=20):
+    """对单个库执行搜索，返回 [{path, cat, title, snippet}]（snippet 150 字去换行）"""
+    ensure_index(docs_dir, db_path)
+    c = get_conn(db_path)
+    conditions, pargs = [], []
+    for kw in query.split():
+        conditions.append("(title LIKE ? OR body LIKE ?)")
+        pargs.extend([f"%{kw}%", f"%{kw}%"])
+    sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)}"
+    if cat:
+        sql += " AND cat = ?"
+        pargs.append(cat)
+    sql += " LIMIT ?"
+    pargs.append(limit)
+    rows = c.execute(sql, pargs).fetchall()
+    c.close()
+    return [{"path": p, "cat": c, "title": t, "snippet": b[:150].replace("\n", " ")} for p, c, t, b in rows]
+
+
+def list_lib(docs_dir, db_path, cat=None):
+    """枚举单个库，返回 [{path, title, size}]"""
+    ensure_index(docs_dir, db_path)
+    c = get_conn(db_path)
+    if cat:
+        rows = c.execute("SELECT path, title, size FROM docs WHERE cat=? ORDER BY title", (cat,)).fetchall()
+    else:
+        rows = c.execute("SELECT path, title, size FROM docs ORDER BY cat, title").fetchall()
+    c.close()
+    return [{"path": r[0], "title": r[1], "size": r[2]} for r in rows]
+
+
+def list_workspaces():
+    """扫描已存在的 workspace 库（~/.docs-search/workspaces/ 下子目录），返回排序库名列表"""
+    root = Path.home() / ".docs-search" / "workspaces"
+    if not root.exists():
+        return []
+    return sorted(p.name for p in root.iterdir() if p.is_dir() and resolve_workspace(p.name))
+
+
+# ============================================================
 # 上传文件名安全化
 # ============================================================
 def sanitize_filename(name):

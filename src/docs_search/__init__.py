@@ -13,6 +13,8 @@ from .core import (  # noqa: F401
     ensure_index,
     files_hash,
     get_conn,
+    list_lib,
+    list_workspaces,
     load_meta,
     meta_path,
     need_reindex,
@@ -28,5 +30,6 @@ from .core import (  # noqa: F401
     save_meta,
     scan_docs,
     scan_meta,
+    search_lib,
     win_utf8,
 )

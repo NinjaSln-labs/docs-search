@@ -310,6 +310,36 @@ def test_remote_mode_full_roundtrip(tmp_path, web_server):
         c.close()
 
 
+def test_workspace_all_aggregation(tmp_path):
+    """workspace=all: 跨默认库 + 全部 workspace 搜索/枚举,结果带来源;写操作拒绝"""
+    docs = make_corpus(tmp_path)
+    fake_home = tmp_path / "fakehome"
+    c = McpClient(docs, env_extra={"HOME": str(fake_home), "USERPROFILE": str(fake_home)})
+    try:
+        c.initialize()
+        # 默认库写入 ALL_DEFAULT_1,workspace wa/wb 各写 ALL_MARKER_X
+        out = c.text(c.call("docs_write", {"filename": "d.md", "content": "ALL_DEFAULT_1\n"}))
+        assert "uploads/d.md" in out
+        c.text(c.call("docs_write", {"filename": "a1.md", "content": "ALL_WS_A\n", "workspace": "wa"}))
+        c.text(c.call("docs_write", {"filename": "a2.md", "content": "ALL_WS_B\n", "workspace": "wb"}))
+        # 聚合搜索: 命中所有库,带 [workspace] 标注
+        out = c.text(c.call("docs_search", {"query": "ALL_", "workspace": "all"}))
+        assert "3 results" in out and "workspace=all" in out
+        assert "uploads/d.md" in out and "[wa]" in out and "[wb]" in out
+        # 聚合 info list/stats
+        out = c.text(c.call("docs_info", {"workspace": "all"}))
+        assert "docs (workspace=all)" in out and "[wa]" in out and "[wb]" in out
+        out = c.text(c.call("docs_info", {"mode": "stats", "workspace": "all"}))
+        assert '"count": 5' in out and '"workspaces": ["wa", "wb"]' in out
+        # 写操作拒绝 all
+        resp = c.call("docs_write", {"filename": "x.md", "content": "x", "workspace": "all"})
+        assert resp["result"].get("isError") is True and "不支持写入" in resp["result"]["content"][0]["text"]
+        resp = c.call("docs_delete", {"path": "uploads/x.md", "workspace": "all"})
+        assert resp["result"].get("isError") is True and "不支持删除" in resp["result"]["content"][0]["text"]
+    finally:
+        c.close()
+
+
 def test_local_workspace_isolation(tmp_path):
     """操作级 workspace: 工具调用传 workspace 参数 → 自包含库,与默认库天然隔离"""
     docs = make_corpus(tmp_path)

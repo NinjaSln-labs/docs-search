@@ -194,3 +194,20 @@ class TestRemoteAuth:
             assert c.list(workspace="wx-1")["docs"][0]["path"] == "uploads/f.md"
         finally:
             srv.shutdown()
+
+    def test_workspace_all_passthrough(self, tmp_path, monkeypatch):
+        """workspace=all 经 ws=all 透传,服务端跨库聚合返回带 ws 来源"""
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+        base, srv = self._auth_server(tmp_path, AuthConfig())
+        try:
+            c = RemoteClient(base)
+            assert c.upload("d.md", "shared-marker-42\n")["ok"]
+            assert c.upload("w.md", "shared-marker-42\n", workspace="wa")["ok"]
+            r = c.search("shared-marker-42", workspace="all")
+            assert r["workspace"] == "all"
+            by_ws = {x["ws"]: x["path"] for x in r["results"]}
+            assert by_ws == {"": "uploads/d.md", "wa": "uploads/w.md"}
+            assert c.list(workspace="all")["workspace"] == "all"
+        finally:
+            srv.shutdown()

@@ -44,6 +44,8 @@ from .core import (
     MAX_UPLOAD_BYTES,
     ensure_index,
     get_conn,
+    list_lib,
+    list_workspaces,
     load_meta,
     resolve_db_path,
     resolve_docs_dir,
@@ -51,6 +53,7 @@ from .core import (
     resolve_workspace,
     resolve_workspace_paths,
     sanitize_filename,
+    search_lib,
     win_utf8,
 )
 
@@ -336,13 +339,30 @@ def make_handler(docs_dir, db_path, auth=None):
         def _authorized(self):
             return auth_cfg.check(self.headers.get("Authorization"))
 
-        # ---------- 库解析（操作级 workspace: ?ws=<name> 切到自包含库，不传 = 默认库）----------
+        # ---------- 库解析（操作级 workspace: ?ws=<name> 切到自包含库，不传 = 默认库，ws=all = 聚合）----------
+        def _ws_name(self, params):
+            return resolve_workspace((params.get("ws") or [""])[0] if params else "")
+
         def _lib(self, params):
-            ws = resolve_workspace((params.get("ws") or [""])[0] if params else "")
+            ws = self._ws_name(params)
             if not ws:
                 return docs_dir, db_path
             d, p = resolve_workspace_paths(ws)
             return d.resolve(), p.resolve()
+
+        def _all_libs(self):
+            """ws=all 聚合模式: [(workspace 名或 None, docs_dir, db_path), ...]，默认库在前"""
+            libs = [(None, docs_dir, db_path)]
+            for name in list_workspaces():
+                d, p = resolve_workspace_paths(name)
+                libs.append((name, d.resolve(), p.resolve()))
+            return libs
+
+        def _reject_all(self, ws, action):
+            if ws == "all":
+                self._json(400, {"error": f"workspace=all 仅支持搜索/列表/统计，不支持 {action}"})
+                return True
+            return False
 
         # ---------- GET ----------
         def do_GET(self):
@@ -358,6 +378,9 @@ def make_handler(docs_dir, db_path, auth=None):
                 self._send(404, "text/plain; charset=utf-8", b"not found")
 
         def _api_get(self, path, params):
+            if self._ws_name(params) == "all":
+                self._api_get_all(path, params)
+                return
             docs_dir, db_path = self._lib(params)
             if path == "/api/stats":
                 n, _ = ensure_index(docs_dir, db_path)
@@ -420,6 +443,49 @@ def make_handler(docs_dir, db_path, auth=None):
             else:
                 self._send(404, "text/plain; charset=utf-8", b"not found")
 
+        # ---------- ws=all 聚合（跨默认库 + 全部 workspace 搜索/枚举/统计，结果带 ws 来源）----------
+        def _api_get_all(self, path, params):
+            if path == "/api/stats":
+                count, cats = 0, set()
+                for name, d, p in self._all_libs():
+                    n, _ = ensure_index(d, p)
+                    count += load_meta(p).get("count", n)
+                    try:
+                        c = get_conn(p)
+                        for row in c.execute("SELECT DISTINCT cat FROM docs"):
+                            cats.add(row[0])
+                        c.close()
+                    except Exception:  # noqa: BLE001, S110 -- 单个库异常不影响聚合
+                        pass
+                self._json(200, {
+                    "count": count, "updated": "?", "categories": sorted(cats),
+                    "workspaces": [n for n, _, _ in self._all_libs()[1:]], "workspace": "all",
+                })
+                return
+            if path == "/api/search":
+                q = params.get("q", [""])[0].strip()
+                if not q:
+                    self._json(200, {"error": "请输入关键词"})
+                    return
+                cat = params.get("cat", [""])[0]
+                results = []
+                for name, d, p in self._all_libs():
+                    for r in search_lib(d, p, q, cat or None):
+                        r["ws"] = name or ""
+                        results.append(r)
+                self._json(200, {"results": results, "workspace": "all"})
+                return
+            if path == "/api/list":
+                cat = params.get("cat", [""])[0]
+                docs_list = []
+                for name, d, p in self._all_libs():
+                    for r in list_lib(d, p, cat or None):
+                        r["ws"] = name or ""
+                        docs_list.append(r)
+                self._json(200, {"docs": docs_list, "workspace": "all"})
+                return
+            self._send(404, "text/plain; charset=utf-8", b"not found")
+
         # ---------- POST ----------
         def do_POST(self):
             if not self._authorized():
@@ -446,6 +512,8 @@ def make_handler(docs_dir, db_path, auth=None):
             return self.rfile.read(length), None
 
         def _api_upload(self, params):
+            if self._reject_all(self._ws_name(params), "上传"):
+                return
             docs_dir, db_path = self._lib(params)
             filename = sanitize_filename(params.get("filename", [""])[0])
             if not filename:
@@ -473,6 +541,8 @@ def make_handler(docs_dir, db_path, auth=None):
             self._json(200, {"ok": True, "path": f"uploads/{target.name}", "count": n})
 
         def _api_delete(self, params):
+            if self._reject_all(self._ws_name(params), "删除"):
+                return
             docs_dir, db_path = self._lib(params)
             rel = params.get("path", [""])[0].replace("\\", "/")
             uploads_root = (docs_dir / "uploads").resolve()

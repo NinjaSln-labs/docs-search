@@ -27,11 +27,15 @@ from .core import (
     MAX_UPLOAD_BYTES,
     ensure_index,
     get_conn,
+    list_lib,
+    list_workspaces,
     load_meta,
     resolve_paths,
     resolve_upload_target,
     resolve_workspace,
+    resolve_workspace_paths,
     sanitize_filename,
+    search_lib,
     win_utf8,
 )
 
@@ -58,8 +62,22 @@ def cmd_index(args):
     print(f"  db:   {db_path}")
 
 
+def _all_libs(args):
+    """workspace=all 聚合: [(workspace 名或 None, docs_dir, db_path), ...]，默认库在前
+    （默认库必须按无 workspace 解析——--workspace all 不能被当成库名）"""
+    default_docs, default_db = resolve_paths(getattr(args, "dir", None), getattr(args, "db", None), None)
+    libs = [(None, default_docs, default_db)]
+    for name in list_workspaces():
+        d, p = resolve_workspace_paths(name)
+        libs.append((name, d.resolve(), p.resolve()))
+    return libs
+
+
 def cmd_search(args):
     win_utf8()
+    if getattr(args, "workspace", None) == "all":
+        _cmd_search_all(args)
+        return
     docs_dir, db_path = _paths(args)
     import time
 
@@ -92,8 +110,33 @@ def cmd_search(args):
         print()
 
 
+def _cmd_search_all(args):
+    """workspace=all: 跨默认库 + 全部 workspace 搜索，结果带 [workspace] 来源标注"""
+    import time
+
+    t0 = time.time()
+    q = args.query.strip()
+    hits = []
+    for name, d, p in _all_libs(args):
+        for r in search_lib(d, p, q, limit=args.limit):
+            hits.append((name, r))
+    dt = (time.time() - t0) * 1000
+    if not hits:
+        print(f'no results for "{q}" (workspace=all)')
+        return
+    print(f'"{q}" -> {len(hits)} results ({dt:.0f}ms, workspace=all)\n')
+    for name, r in hits:
+        tag = "" if name is None else f" [{name}]"
+        print(f"[{r['path']}{tag}] {r['title']}")
+        print(f"  {r['snippet'][:120]}...")
+        print()
+
+
 def cmd_list(args):
     win_utf8()
+    if getattr(args, "workspace", None) == "all":
+        _cmd_list_all(args)
+        return
     _docs_dir, db_path = _paths(args)
     c = get_conn(db_path)
     rows = c.execute("SELECT cat, path, title, size FROM docs ORDER BY cat, title").fetchall()
@@ -108,6 +151,21 @@ def cmd_list(args):
             cur = cat
             print(f"\n### {cat}/")
         print(f"  . {path} -- {title} ({size // 1024}KB)")
+
+
+def _cmd_list_all(args):
+    """workspace=all: 跨库枚举，结果带 [workspace] 来源标注"""
+    rows = []
+    for name, d, p in _all_libs(args):
+        for r in list_lib(d, p):
+            rows.append((name, r))
+    if not rows:
+        print("empty (workspace=all)")
+        return
+    print(f"total: {len(rows)} docs (workspace=all)\n")
+    for name, r in rows:
+        tag = "" if name is None else f" [{name}]"
+        print(f"  . {r['path']}{tag} -- {r['title']} ({r['size'] // 1024}KB)")
 
 
 def cmd_show(args):
