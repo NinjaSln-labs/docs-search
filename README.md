@@ -91,8 +91,8 @@ curl -X POST "http://127.0.0.1:8765/api/upload?filename=notes.md" \
 # Cursor（~/.cursor/mcp.json）
 { "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }
 
-# Qoder CLI
-qoder mcp add docs-search -- docs-search-mcp --dir /path/to/docs
+# Qoder CLI（-s user 全局；找不到命令时换绝对路径）
+qoder mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 ```
 
 暴露 5 个工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。

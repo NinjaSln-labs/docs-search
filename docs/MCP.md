@@ -53,6 +53,8 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 
 ## ZCode
 
+> ⏳ 暂缓实测(无订阅)。以下配置已按官方文档( zcode.z.ai/docs/mcp-services )核实,订阅后可直接用。
+
 Settings → MCP Servers → **New MCP Server**,Scope 选 User 或 Workspace,类型保持 `stdio`,
 Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`。
 或用 **Full configuration mode** 直接粘贴(兼容 `{"mcpServers": {...}}` 结构):
@@ -70,12 +72,19 @@ Command 填 `docs-search-mcp`,Arguments 填 `--dir <文档目录>`。
 
 ## Qoder
 
+**配置/协议层已实测通过**(Mac, qoder CLI 1.1.43:`mcp list` 显示 `✓ Connected`,
+即 qoder 成功启动本 server 并完成握手;agent 级端到端待账号额度恢复后验证,
+工具调用行为已由 dsh/cursor/pi 三家 MCP 客户端同协议验证):
+
 ```bash
-qoder mcp add docs-search -- docs-search-mcp --dir /path/to/your/docs
+qoder mcp add -s user docs-search -- docs-search-mcp --dir /path/to/your/docs
+qoder mcp list        # 应显示 docs-search ✓ Connected
 ```
 
-scope 默认 `local`(当前项目);加 `-s user` 写入 `~/.qoder/settings.json` 全局可用。
-CLI 已在运行时用 `/mcp reload` 重新发现;新会话自动加载。
+- `-s user` 写入 `~/.qoder/settings.json` 全局可用(默认 local 仅当前项目;home 目录下不加会被拒)
+- 命令找不到时改绝对路径(pip 装在 `~/.local/bin` 时注意 PATH)
+- CLI 已在运行时用 `/mcp reload` 重新发现;新会话自动加载
+- agent 非交互:`qoder -p [--dangerously-skip-permissions] "…"`(消耗账号额度)
 
 ## DSH(DeepSeek Harness)
 
