@@ -14,7 +14,7 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 ```
 
 环境变量: `DOCS_SEARCH_DIR` 默认文档目录;路径规则与 CLI 一致(`--dir` > 环境变量 > `./docs`)。
-可选 `DOCS_SEARCH_WORKSPACE`（或 `--workspace <name>`）按命名空间分割索引库,不填=默认库。
+工作空间为**操作级**: 工具调用时传 `workspace` 参数即切到自包含库(不填=默认库),无需启动配置。
 
 ## 远程模式（连接已运行的服务）
 
@@ -64,10 +64,12 @@ Cursor 远程模式示例：
 | `docs_read` | `path`(必填,相对路径) | 读全文 |
 | `docs_write` | `filename`(仅 `.md`)、`content`、`if_exists`(`error`/`overwrite`/`keep`) | 写入 `uploads/` 并即刻索引;同名默认提示(`error`,不写不覆盖),`overwrite` 强制覆盖,`keep` 生成 `-1/-2` 新文件;**勿写密钥/隐私** |
 | `docs_delete` | `path`(必须 `uploads/` 下) | 删除已写入文档;库内文档拒绝(设计如此) |
-| `docs_info` | `mode`(`list`/`stats`)、`cat` | 枚举文档 / 统计与分类 |
+| `docs_info` | `mode`(`list`/`stats`)、`cat`、`workspace` | 枚举文档 / 统计与分类 |
 
 本地模式索引在每次调用前自动增量重建,无需手动维护;多关键词是精确子串 AND 匹配(含中文)。
 远程模式不建索引,由已运行的服务端维护。
+5 个工具均接受可选 `workspace` 参数（操作级，本地/远程一致）: 指定即切到自包含库
+`~/.docs-search/workspaces/<ws>/`，与默认库天然隔离；不传 = 默认库。
 
 ---
 

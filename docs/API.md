@@ -18,12 +18,17 @@
 
 ---
 
-## 工作空间（Workspace，可选）
+## 工作空间（Workspace，操作级）
 
-`docs-search-web <DIR> --workspace <name>`（或环境变量 `DOCS_SEARCH_WORKSPACE`）按命名空间分割索引库：
-索引库路径变为 `~/.docs-search/<workspace>/<目录哈希>/index.db`，不同 workspace 天然隔离；
-不填 = 默认库（`~/.docs-search/<目录哈希>/index.db`，与旧版路径一致）。同一 `--dir` 在不同
-workspace 下互不共享索引/上传（uploads/ 仍在文档目录内，随目录共享）。
+workspace 是**每次请求/操作**可选的概念，不在服务启动时绑定：请求带 `ws=<name>` 即动态切到
+该命名空间的自包含库（`~/.docs-search/workspaces/<ws>/docs/` + `index.db`），不传 = 默认库
+（`--dir` 指定目录或 `./docs`）。同一服务可同时访问任意多个 workspace，天然隔离（上传/删除/
+搜索/统计都只在当前 `ws` 的库内生效）。
+
+```bash
+curl 'http://127.0.0.1:8765/api/search?q=MCP&ws=proj-a'          # 搜 proj-a 库
+curl -X POST 'http://127.0.0.1:8765/api/upload?filename=n.md&ws=proj-b' --data-binary @n.md
+```
 
 ---
 

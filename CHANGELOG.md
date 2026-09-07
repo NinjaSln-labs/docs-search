@@ -19,9 +19,10 @@ tests 新增 remote 客户端单测 + MCP 远程 E2E + web search+cat 回归（4
   携带凭据，探活时凭据错误立即报错退出；pi 扩展透传同名环境变量；文档：docs/API.md 认证节、
   MCP.md 远程认证、DEVELOPMENT 分层边界（后端可独立部署为远端，agent 远程模式纯 HTTP 代理）；
   tests 新增认证用例 + SQL 注入安全证明（62→75 用例）
-- **工作空间（Workspace）**：`--workspace <name>`（CLI/MCP/Web 三入口 + `$DOCS_SEARCH_WORKSPACE`）
-  按命名空间天然分割索引库（`~/.docs-search/<workspace>/<目录哈希>/index.db`）；不填=默认库，
-  路径与旧版一致；pi 扩展透传同名环境变量；tests 新增 workspace 解析/隔离用例
+- **工作空间（Workspace，操作级）**：MCP 5 工具 `workspace` 参数 / Web API `?ws=` / CLI `--workspace`
+  每次操作动态切库，不在服务启动时绑定；指定 → 自包含库 `~/.docs-search/workspaces/<ws>/`
+  （docs + index.db，天然隔离），不填 = 默认库；本地/远程模式一致（remote 经 `ws=` query 透传）；
+  tests 新增 API/MCP/remote 三侧 workspace 隔离与透传用例
 - **上传同名策略 `if_exists`**（Web `?if_exists=`、MCP `docs_write`、CLI `--if-exists`）：默认
   `error`（重名返回提示，不写不覆盖）> `overwrite`（强制覆盖原文件）> `keep`（生成 `-1/-2` 新文件，
   即旧默认行为）；三入口语义一致，`core.resolve_upload_target` 单点实现；tests 覆盖三策略 + 未知策略拒绝
