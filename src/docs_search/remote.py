@@ -35,17 +35,16 @@ class RemoteError(Exception):
 
 
 def normalize_url(url):
-    """清洗服务地址: 补 scheme、去尾部斜杠；非法返回 None"""
+    """清洗服务地址: 补 scheme、去尾部斜杠；非法返回 None。
+    补 scheme 用 '://' 判定（不依赖 urlsplit 对裸串的 scheme 猜测——
+    Python 3.10 会把 '192.168.1.10:8765' 误判为 scheme，3.12+ 行为不同）"""
     url = (url or "").strip()
     if not url:
         return None
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme and parsed.scheme not in ("http", "https"):
-        return None  # 显式非 http(s) scheme → 拒绝
-    if not parsed.scheme:
+    if "://" not in url:
         url = "http://" + url  # 允许裸 ip:port / host:port 写法
-        parsed = urllib.parse.urlsplit(url)
-    if not parsed.netloc:
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return None
     return url.rstrip("/")
 
