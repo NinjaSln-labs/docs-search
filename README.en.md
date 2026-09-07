@@ -19,7 +19,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 
 ## 📖 Documentation
 
-**https://ninjasln-labs.github.io/docs-search/** — [Human Guide](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md) · [Agent Integration Guide](https://ninjasln-labs.github.io/docs-search/#doc=MCP.md) · [Agent Guide](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) · [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json) · [API Reference](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
+**https://ninjasln-labs.github.io/docs-search/** — [Human Guide](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md) · [Agent Integration Guide](https://ninjasln-labs.github.io/docs-search/#doc=MCP.md) · [Agent Guide](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) · [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json) · [API Reference](https://ninjasln-labs.github.io/docs-search/#doc=API.md) · [Server Contract](https://ninjasln-labs.github.io/docs-search/#doc=SERVER-CONTRACT.md)
 
 ## Quick Start
 

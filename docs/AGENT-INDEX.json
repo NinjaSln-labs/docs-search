@@ -54,7 +54,8 @@
       "web": {
         "command": "docs-search-web [DIR] [--host HOST] [--port PORT] [--no-browser]",
         "defaults": { "host": "127.0.0.1", "port": 8765 },
-        "warning": "默认仅监听 127.0.0.1；非回环监听必须启用认证（--token/--user）否则拒绝启动"
+        "warning": "默认仅监听 127.0.0.1；非回环监听必须启用认证（--token/--user）否则拒绝启动",
+        "server_contract": "/SERVER-CONTRACT.md（自定义兼容服务的完整接口规范 + 验收自检）"
       }
     },
 

@@ -24,7 +24,8 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 - [人类使用手册](https://ninjasln-labs.github.io/docs-search/#doc=HUMAN-GUIDE.md)（安装 / CLI / Web / FAQ）
 - [Agent 接入指南](https://ninjasln-labs.github.io/docs-search/#doc=MCP.md)（MCP server + Cursor / ZCode / Qoder / DSH / pi 配置）
 - [Agent 操作手册](https://ninjasln-labs.github.io/docs-search/#doc=AGENT-GUIDE.md) + [AGENT-INDEX.json](https://ninjasln-labs.github.io/docs-search/AGENT-INDEX.json)（机器可读索引）
-- [Web API 参考](https://ninjasln-labs.github.io/docs-search/#doc=API.md)
+- [Web API 参考](https://ninjasln-labs.github.io/docs-search/#doc=API.md)（调用方）
+- [兼容服务端契约](https://ninjasln-labs.github.io/docs-search/#doc=SERVER-CONTRACT.md)（自定义服务实现方规范 + 验收自检）
 
 ## 快速开始 / Quick Start
 

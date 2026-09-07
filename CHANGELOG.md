@@ -6,6 +6,9 @@
 
 ### Added
 
+- **服务端契约文档 [docs/SERVER-CONTRACT.md](docs/SERVER-CONTRACT.md)**：自定义 docs-search 兼容服务的完整接口规范
+  （6 端点契约/全局错误约定/Bearer+Basic 认证/workspace 语义/最小可用子集/验收自检 curl），
+  任何语言可按契约复刻官方 web.py；MCP 远程模式与 API.md 交叉引用
 - **MCP 远程模式**（`docs-search-mcp --url http://ip:port` 或 `$DOCS_SEARCH_URL`）：用户已运行
 docs-search 服务（本机 `docs-search-web` 或其他机器上接口相同的服务）时，不读本地目录、不起本地索引，
 5 个工具全部代理到该服务的 `/api/*`（输出格式与本地模式一致）；地址支持裸 `ip:port`；启动探活

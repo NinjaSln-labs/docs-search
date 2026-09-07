@@ -1,5 +1,7 @@
 # docs-search Web API 参考
 
+> 本文件是**调用方**参考（官方服务怎么用）。想自己实现一个兼容服务，看
+> [SERVER-CONTRACT.md](SERVER-CONTRACT.md)（服务端实现方契约 + 验收自检）。
 > HTTP 服务默认监听 `127.0.0.1:8765`（`docs-search-web <DIR> --no-browser` 启动）。
 > 所有响应均为 `application/json; charset=utf-8`，含 CORS 头 `Access-Control-Allow-Origin: *`。
 > 安全提醒：默认仅监听回环地址；**监听非回环地址时必须启用认证**，否则服务拒绝启动。
