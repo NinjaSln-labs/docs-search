@@ -249,4 +249,4 @@ v1.0.0 起控制台输出已强制 UTF-8。若终端仍乱码，执行 `chcp 650
 
 ---
 
-*docs-search v1.1.0 · MIT License · [NinjaSln-labs/docs-search](https://github.com/NinjaSln-labs/docs-search)*
+*docs-search v1.2.0 · MIT License · [NinjaSln-labs/docs-search](https://github.com/NinjaSln-labs/docs-search)*

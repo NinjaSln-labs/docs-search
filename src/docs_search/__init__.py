@@ -1,6 +1,6 @@
 """docs_search: 零依赖本地文档搜索引擎（SQLite 索引，CLI + Web UI）"""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from .core import (  # noqa: F401
     ENV_DB_PATH,
