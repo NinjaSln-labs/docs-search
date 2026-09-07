@@ -32,6 +32,7 @@ pip install docs-search
 |------|------|
 | `docs-search` | 命令行：索引 / 搜索 / 上传等 |
 | `docs-search-web` | 启动 Web 界面（含上传接口的 HTTP 服务） |
+| `docs-search-mcp` | MCP stdio server（AI agent 对接，见 [MCP.md](MCP.md)） |
 
 ### 方式 B：零安装直跑
 
@@ -241,4 +242,4 @@ v1.0.0 起控制台输出已强制 UTF-8。若终端仍乱码，执行 `chcp 650
 
 ---
 
-*docs-search v1.0.0 · MIT License · [NinjaSln-labs/docs-search](https://github.com/NinjaSln-labs/docs-search)*
+*docs-search v1.1.0 · MIT License · [NinjaSln-labs/docs-search](https://github.com/NinjaSln-labs/docs-search)*
