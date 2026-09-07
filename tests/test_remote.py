@@ -82,9 +82,14 @@ class TestRemoteClient:
         assert r["ok"] and r["path"] == "uploads/note.md" and r["count"] == 3
         assert (docs / "uploads" / "note.md").exists()
 
-        # 同名 → 服务端去重 -1
+        # 同名默认(error) → 冲突错误 dict,原文件不动
         r = c.upload("note.md", "two\n")
+        assert "error" in r and "文件已存在" in r["error"]
+        # if_exists=keep → 服务端去重 -1;overwrite → 覆盖
+        r = c.upload("note.md", "two\n", "keep")
         assert r["path"] == "uploads/note-1.md"
+        r = c.upload("note.md", "three\n", "overwrite")
+        assert r["path"] == "uploads/note.md" and (docs / "uploads" / "note.md").read_text(encoding="utf-8") == "three\n"
 
         # 非 .md → 服务端拒绝（400 + JSON error）
         assert "error" in c.upload("x.exe", "data")

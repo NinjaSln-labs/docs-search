@@ -184,9 +184,18 @@ def test_write_delete_roundtrip_with_guards(tmp_path):
         assert "uploads/session.md" in out
         assert "TOKEN_XYZ_987" in c.text(c.call("docs_search", {"query": "TOKEN_XYZ_987"}))
 
-        # 同名写入 → 自动去重 -1
-        out = c.text(c.call("docs_write", {"filename": "session.md", "content": "second\n"}))
+        # 同名写入(默认 if_exists=error) → isError 提示,不覆盖不新增
+        resp = c.call("docs_write", {"filename": "session.md", "content": "second\n"})
+        assert resp["result"].get("isError") is True and "文件已存在" in resp["result"]["content"][0]["text"]
+        # if_exists=keep → 自动去重 -1;if_exists=overwrite → 覆盖原文件
+        out = c.text(c.call("docs_write", {"filename": "session.md", "content": "second\n", "if_exists": "keep"}))
         assert "uploads/session-1.md" in out
+        out = c.text(c.call("docs_write", {"filename": "session.md", "content": "v2\n", "if_exists": "overwrite"}))
+        assert "uploads/session.md" in out
+        assert "v2" in c.text(c.call("docs_read", {"path": "uploads/session.md"}))
+        # 非法 if_exists → isError
+        resp = c.call("docs_write", {"filename": "x.md", "content": "x", "if_exists": "bogus"})
+        assert resp["result"].get("isError") is True
 
         # 文件名消毒: 路径穿越降级为 basename
         out = c.text(c.call("docs_write", {"filename": "a/b/../../evil.md", "content": "evil\n"}))

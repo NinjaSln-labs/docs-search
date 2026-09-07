@@ -206,10 +206,33 @@ class TestWebAPI:
         assert hits["results"][0]["path"] == "uploads/note.md"
 
     def test_upload_dedupe(self, server):
-        base, _ = server
+        base, docs = server
         post(base, "/api/upload?filename=note.md", "one", raw=True)
+        # 默认策略（error）: 同名冲突 → 409 提示,不写新文件,不覆盖原文件
         r = post(base, "/api/upload?filename=note.md", "two", raw=True)
-        assert r["path"] == "uploads/note-1.md"
+        assert "error" in r and "文件已存在" in r["error"]
+        assert not (docs / "uploads" / "note-1.md").exists()
+        assert (docs / "uploads" / "note.md").read_text(encoding="utf-8") == "one"
+
+    def test_upload_overwrite(self, server):
+        base, docs = server
+        post(base, "/api/upload?filename=note.md", "one", raw=True)
+        r = post(base, "/api/upload?filename=note.md&if_exists=overwrite", "two", raw=True)
+        assert r["ok"] and r["path"] == "uploads/note.md"  # 覆盖同一路径
+        assert (docs / "uploads" / "note.md").read_text(encoding="utf-8") == "two"
+        assert not (docs / "uploads" / "note-1.md").exists()
+
+    def test_upload_keep_new_file(self, server):
+        base, docs = server
+        post(base, "/api/upload?filename=note.md", "one", raw=True)
+        r = post(base, "/api/upload?filename=note.md&if_exists=keep", "two", raw=True)
+        assert r["ok"] and r["path"] == "uploads/note-1.md"
+        assert (docs / "uploads" / "note.md").read_text(encoding="utf-8") == "one"  # 原文件不动
+
+    def test_upload_unknown_policy_rejected(self, server):
+        base, _ = server
+        r = post(base, "/api/upload?filename=n.md&if_exists=bogus", "x", raw=True)
+        assert "error" in r and "未知 if_exists" in r["error"]
 
     def test_upload_rejects_non_md(self, server):
         base, _ = server

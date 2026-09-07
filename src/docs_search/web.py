@@ -16,8 +16,11 @@ API:
   GET  /api/search?q=关键词&cat=     # 搜索
   GET  /api/list?cat=                # 列出文档
   GET  /api/show?path=xxx            # 文档内容
-  POST /api/upload?filename=x.md     # 上传文档（raw body = 文件内容，UTF-8）
+  POST /api/upload?filename=x.md&if_exists=error|overwrite|keep  # 上传文档（同名策略，默认 error 提示）
   POST /api/delete?path=uploads/x.md # 删除 uploads/ 下已上传文档
+
+工作空间（可选）: --workspace <name> 或 $DOCS_SEARCH_WORKSPACE；索引库路径加
+~/.docs-search/<workspace>/ 命名空间层，不填 = 默认库（路径与旧版一致）。
 
 认证（远端部署）：--token（Bearer）/ --user+--password（Basic），二选一；
 凭据也可用环境变量 DOCS_SEARCH_TOKEN / DOCS_SEARCH_USER / DOCS_SEARCH_PASSWORD。
@@ -37,13 +40,16 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .core import (
+    ENV_WORKSPACE,
+    IF_EXISTS_CHOICES,
     MAX_UPLOAD_BYTES,
-    dedupe_target,
     ensure_index,
     get_conn,
     load_meta,
     resolve_db_path,
     resolve_docs_dir,
+    resolve_upload_target,
+    resolve_workspace,
     sanitize_filename,
     win_utf8,
 )
@@ -435,6 +441,10 @@ def make_handler(docs_dir, db_path, auth=None):
             if not filename:
                 self._json(400, {"error": "文件名非法（仅支持 .md，且不含路径部分）"})
                 return
+            if_exists = params.get("if_exists", ["error"])[0]
+            if if_exists not in IF_EXISTS_CHOICES:
+                self._json(400, {"error": f"未知 if_exists 取值: {if_exists!r}（可选: error/overwrite/keep）"})
+                return
             body, err = self._read_body()
             if err:
                 self._json(err[0], err[1])
@@ -444,9 +454,9 @@ def make_handler(docs_dir, db_path, auth=None):
             except UnicodeDecodeError:
                 self._json(400, {"error": "文件必须是 UTF-8 文本"})
                 return
-            target = dedupe_target(docs_dir, filename)
-            if not target:
-                self._json(500, {"error": "无法分配目标文件名"})
+            target, msg = resolve_upload_target(docs_dir, filename, if_exists)
+            if target is None:
+                self._json(409, {"error": msg})  # 同名冲突（默认策略）
                 return
             target.write_bytes(body)
             n, _ = ensure_index(docs_dir, db_path)
@@ -493,6 +503,7 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1，勿暴露公网）")
     parser.add_argument("--port", "-p", type=int, default=DEFAULT_PORT, help=f"端口（默认 {DEFAULT_PORT}）")
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    parser.add_argument("--workspace", default=None, help=f"工作空间名（可选，索引库按 {ENV_WORKSPACE} 分割；不填=默认库）")
     parser.add_argument("--token", default=None, help=f"启用 Bearer 认证（默认 ${ENV_TOKEN}）")
     parser.add_argument("--user", default=None, help=f"启用 Basic 认证用户名（默认 ${ENV_USER}；与 --password 成对）")
     parser.add_argument("--password", default=None, help=f"Basic 认证密码（默认 ${ENV_PASSWORD}）")
@@ -514,13 +525,16 @@ def main():
         sys.exit(1)
 
     docs_dir = resolve_docs_dir(args.dir)
-    db_path = resolve_db_path(docs_dir)
+    db_path = resolve_db_path(docs_dir, workspace=resolve_workspace(args.workspace))
     if not docs_dir.exists():
         print(f"错误: 文档目录不存在: {docs_dir}")
         print(f"请指定目录参数，或设置环境变量 {('DOCS_SEARCH_DIR')}")
         sys.exit(1)
 
     print(f"文档目录: {docs_dir}")
+    ws = resolve_workspace(args.workspace)
+    if ws:
+        print(f"工作空间: {ws}")
     n, updated = ensure_index(docs_dir, db_path)
     print(f"索引就绪: {n} 个文档{'（已重建）' if updated else ''}")
     if auth.enabled:

@@ -1,16 +1,17 @@
 """docs-search: 本地文档搜索引擎（零依赖，SQLite，毫秒级检索）
 
 用法:
-  python scripts/docs-search.py index [--dir 目录]
+  python scripts/docs-search.py index [--dir 目录] [--workspace 名字]
   python scripts/docs-search.py search "关键词" [--dir 目录]
   python scripts/docs-search.py list [--dir 目录]
   python scripts/docs-search.py show <path> [--dir 目录]
   python scripts/docs-search.py status [--dir 目录]
-  python scripts/docs-search.py upload <file.md> [--dir 目录]  # 上传（复制）文档
+  python scripts/docs-search.py upload <file.md> [--dir 目录] [--if-exists error|overwrite|keep]
 
 路径规则（不绑定任何本地路径）:
   文档目录: --dir > 环境变量 DOCS_SEARCH_DIR > ./docs
-  索引库:   ~/.docs-search/<目录哈希>/index.db（按目录隔离，多库并存）
+  索引库:   --db > 环境变量 DOCS_SEARCH_DB > ~/.docs-search[/<工作空间>]/<目录哈希>/index.db
+           （可选 --workspace / $DOCS_SEARCH_WORKSPACE 按命名空间分割，不填=默认库）
 
 跨平台: Windows / macOS / Linux
 """
@@ -21,13 +22,15 @@ import sys
 from pathlib import Path
 
 from .core import (
+    IF_EXISTS_CHOICES,
     MAX_UPLOAD_BYTES,
-    dedupe_target,
     ensure_index,
     get_conn,
     load_meta,
     resolve_db_path,
     resolve_docs_dir,
+    resolve_upload_target,
+    resolve_workspace,
     sanitize_filename,
     win_utf8,
 )
@@ -38,7 +41,7 @@ ALIAS = {"i": "index", "s": "search", "st": "status", "l": "list", "sh": "show",
 
 def _paths(args):
     docs_dir = resolve_docs_dir(getattr(args, "dir", None))
-    db_path = resolve_db_path(docs_dir, getattr(args, "db", None))
+    db_path = resolve_db_path(docs_dir, getattr(args, "db", None), resolve_workspace(getattr(args, "workspace", None)))
     return docs_dir, db_path
 
 
@@ -144,7 +147,7 @@ def cmd_status(args):
 
 
 def cmd_upload(args):
-    """把一个 .md 文件复制到文档库 uploads/ 并重建索引"""
+    """把一个 .md 文件复制到文档库 uploads/ 并重建索引；同名策略由 --if-exists 决定"""
     win_utf8()
     docs_dir, db_path = _paths(args)
     src = Path(args.file).expanduser().resolve()
@@ -158,15 +161,16 @@ def cmd_upload(args):
     if not name:
         print(f"invalid filename: {src.name}")
         sys.exit(1)
-    target = dedupe_target(docs_dir, name)
-    if not target:
-        print("upload failed: cannot allocate target name")
+    target, msg = resolve_upload_target(docs_dir, name, args.if_exists)
+    if target is None:
+        print(msg)
         sys.exit(1)
     target.write_bytes(src.read_bytes())
     from .core import rebuild_index
 
     n, dt = rebuild_index(docs_dir, db_path)
-    print(f"uploaded: {target.name} -> uploads/{target.name}")
+    verb = "overwrote" if args.if_exists == "overwrite" else "uploaded"
+    print(f"{verb}: {target.name} -> uploads/{target.name}")
     print(f"reindexed {n} docs in {dt:.0f}ms")
 
 
@@ -192,7 +196,8 @@ def main():
     def add(name, aliases, help_text):
         sp = sub.add_parser(name, aliases=aliases, help=help_text)
         sp.add_argument("--dir", default=None, help="文档根目录（默认 ./docs 或 $DOCS_SEARCH_DIR）")
-        sp.add_argument("--db", default=None, help="索引库路径（默认 ~/.docs-search/<目录哈希>/index.db）")
+        sp.add_argument("--db", default=None, help="索引库路径（默认 ~/.docs-search[/<workspace>]/<目录哈希>/index.db）")
+        sp.add_argument("--workspace", default=None, help="工作空间名（可选，索引库按 $DOCS_SEARCH_WORKSPACE 分割；不填=默认库）")
         return sp
 
     add("index", ["i"], "重建索引")
@@ -205,6 +210,8 @@ def main():
     add("status", ["st"], "查看索引状态")
     sp_up = add("upload", ["u"], "上传（复制）.md 文档到 uploads/ 并重建索引")
     sp_up.add_argument("file", help="要上传的 .md 文件路径")
+    sp_up.add_argument("--if-exists", default="error", choices=IF_EXISTS_CHOICES,
+                       help="同名冲突策略: error（默认，提示不写）/ overwrite（强制覆盖）/ keep（生成 -N 新文件）")
     sp_open = add("open", ["o"], "用系统默认程序打开文档")
     sp_open.add_argument("path", help="文档相对路径")
 

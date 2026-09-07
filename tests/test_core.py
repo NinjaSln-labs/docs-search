@@ -172,3 +172,64 @@ class TestDedupeTarget:
         (tmp_path / "uploads" / "a.md").write_text("x", encoding="utf-8")
         t = core.dedupe_target(tmp_path, "a.md")
         assert t.name == "a-1.md"
+
+
+class TestUploadTarget:
+    """同名冲突策略: error(默认提示) / overwrite(覆盖) / keep(-N 新文件)"""
+
+    def test_first_take_any_policy(self, tmp_path):
+        for policy in ("error", "overwrite", "keep"):
+            t, msg = core.resolve_upload_target(tmp_path, "fresh.md", policy)
+            assert t == tmp_path / "uploads" / "fresh.md" and msg is None
+
+    def test_default_conflict_returns_hint(self, tmp_path):
+        (tmp_path / "uploads").mkdir()
+        (tmp_path / "uploads" / "a.md").write_text("old", encoding="utf-8")
+        t, msg = core.resolve_upload_target(tmp_path, "a.md")  # 默认 error
+        assert t is None and "文件已存在" in msg and "overwrite" in msg
+        assert (tmp_path / "uploads" / "a.md").read_text(encoding="utf-8") == "old"  # 未写
+
+    def test_overwrite_returns_same_target(self, tmp_path):
+        (tmp_path / "uploads").mkdir()
+        (tmp_path / "uploads" / "a.md").write_text("old", encoding="utf-8")
+        t, msg = core.resolve_upload_target(tmp_path, "a.md", "overwrite")
+        assert t == tmp_path / "uploads" / "a.md" and msg is None
+
+    def test_keep_returns_suffixed(self, tmp_path):
+        (tmp_path / "uploads").mkdir()
+        (tmp_path / "uploads" / "a.md").write_text("x", encoding="utf-8")
+        t, msg = core.resolve_upload_target(tmp_path, "a.md", "keep")
+        assert t.name == "a-1.md" and msg is None
+
+    def test_unknown_policy_rejected(self, tmp_path):
+        t, msg = core.resolve_upload_target(tmp_path, "a.md", "bogus")
+        assert t is None and "未知 if_exists" in msg
+
+
+class TestWorkspace:
+    def test_default_none(self, monkeypatch):
+        monkeypatch.delenv("DOCS_SEARCH_WORKSPACE", raising=False)
+        assert core.resolve_workspace(None) is None
+
+    def test_explicit_beats_env(self, monkeypatch):
+        monkeypatch.setenv("DOCS_SEARCH_WORKSPACE", "env-ws")
+        assert core.resolve_workspace("cli-ws") == "cli-ws"
+        assert core.resolve_workspace(None) == "env-ws"
+
+    def test_unsafe_chars_sanitized(self):
+        assert core.resolve_workspace("../etc/passwd") == "_etc_passwd"
+        assert core.resolve_workspace("a\\b: c") == "a_b_ c"
+
+    def test_db_path_gains_workspace_layer(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("DOCS_SEARCH_DB", raising=False)
+        plain = core.resolve_db_path(tmp_path)
+        ws = core.resolve_db_path(tmp_path, workspace="proj-a")
+        assert plain.parent.name != "proj-a"
+        assert ws.parent.parent.name == "proj-a"  # ~/.docs-search/<ws>/<hash>/index.db
+        assert ws.name == plain.name  # 同一目录哈希下的 db 文件名一致
+
+    def test_db_workspace_isolates_dirs(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("DOCS_SEARCH_DB", raising=False)
+        d1, d2 = tmp_path / "a", tmp_path / "b"
+        assert core.resolve_db_path(d1, workspace="w1") != core.resolve_db_path(d2, workspace="w1")
+        assert core.resolve_db_path(d1, workspace="w1") != core.resolve_db_path(d1, workspace="w2")

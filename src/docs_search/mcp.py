@@ -35,8 +35,8 @@ import sys
 
 from . import __version__
 from .core import (
+    IF_EXISTS_CHOICES,
     MAX_UPLOAD_BYTES,
-    dedupe_target,
     ensure_index,
     get_conn,
     load_meta,
@@ -44,6 +44,8 @@ from .core import (
     resolve_db_path,
     resolve_docs_dir,
     resolve_service_url,
+    resolve_upload_target,
+    resolve_workspace,
     sanitize_filename,
     win_utf8,
 )
@@ -95,15 +97,22 @@ TOOLS = [
         "description": (
             "Write markdown content into the library as a new document (goes to uploads/, "
             "filename sanitized, <=10MB, UTF-8). Indexed immediately — searchable at once. "
-            "Duplicate names get -1/-2 suffixes; use the returned path afterwards. Typical "
-            "agent pattern: persist session conclusions/notes for future retrieval. Do NOT "
-            "write secrets or private data — the library is readable by all local processes."
+            "if_exists: 'error' (default — same-name conflict returns a hint, nothing written), "
+            "'overwrite' (force replace the existing file), 'keep' (auto-suffix -1/-2 new file). "
+            "Use the returned path afterwards. Typical agent pattern: persist session "
+            "conclusions/notes for future retrieval. Do NOT write secrets or private data — "
+            "the library is readable by all local processes."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "filename": {"type": "string", "description": "Target file name, must end with .md (basename only)"},
                 "content": {"type": "string", "description": "Markdown text (UTF-8)"},
+                "if_exists": {
+                    "type": "string",
+                    "enum": ["error", "overwrite", "keep"],
+                    "description": "Same-name conflict policy (default error)",
+                },
             },
             "required": ["filename", "content"],
         },
@@ -207,15 +216,19 @@ def _write(docs_dir, db_path, args: dict) -> dict:
     content = args.get("content")
     if not isinstance(content, str) or not content.strip():
         return _err("content 必须是非空文本")
+    if_exists = str(args.get("if_exists") or "error")
+    if if_exists not in IF_EXISTS_CHOICES:
+        return _err(f"未知 if_exists 取值: {if_exists!r}（可选: error/overwrite/keep）")
     encoded = content.encode("utf-8")
     if len(encoded) > MAX_UPLOAD_BYTES:
         return _err(f"内容过大(上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
-    target = dedupe_target(docs_dir, filename)
-    if not target:
-        return _err("无法分配目标文件名")
+    target, msg = resolve_upload_target(docs_dir, filename, if_exists)
+    if target is None:
+        return _err(msg)
     target.write_bytes(encoded)
     n, _ = rebuild_index(docs_dir, db_path)
-    return _ok(f"written: uploads/{target.name}(库内共 {n} 篇,已索引;后续用该路径 docs_read / docs_search)")
+    verb = "overwrote" if if_exists == "overwrite" else "written"
+    return _ok(f"{verb}: uploads/{target.name}(库内共 {n} 篇,已索引;后续用该路径 docs_read / docs_search)")
 
 
 def _delete(docs_dir, db_path, args: dict) -> dict:
@@ -316,12 +329,16 @@ def _remote_write(client, args: dict) -> dict:
     content = args.get("content")
     if not isinstance(content, str) or not content.strip():
         return _err("content 必须是非空文本")
+    if_exists = str(args.get("if_exists") or "error")
+    if if_exists not in IF_EXISTS_CHOICES:
+        return _err(f"未知 if_exists 取值: {if_exists!r}（可选: error/overwrite/keep）")
     if len(content.encode("utf-8")) > MAX_UPLOAD_BYTES:
         return _err(f"内容过大(上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
-    data = client.upload(filename, content)
+    data = client.upload(filename, content, if_exists)
     if "error" in data:
         return _err(f"上传失败: {data['error']}")
-    return _ok(f"written: {data.get('path')}(库内共 {data.get('count', '?')} 篇,已索引;后续用该路径 docs_read / docs_search)")
+    verb = "overwrote" if if_exists == "overwrite" else "written"
+    return _ok(f"{verb}: {data.get('path')}(库内共 {data.get('count', '?')} 篇,已索引;后续用该路径 docs_read / docs_search)")
 
 
 def _remote_delete(client, args: dict) -> dict:
@@ -444,7 +461,8 @@ def main():
     )
     parser.add_argument("dir_pos", nargs="?", default=None, help="文档根目录(默认 ./docs 或 $DOCS_SEARCH_DIR;远程模式忽略)")
     parser.add_argument("--dir", dest="dir", default=None, help="同位置参数,二选一")
-    parser.add_argument("--db", default=None, help="索引库路径(默认 ~/.docs-search/<目录哈希>/index.db)")
+    parser.add_argument("--db", default=None, help="索引库路径(默认 ~/.docs-search[/<workspace>]/<目录哈希>/index.db)")
+    parser.add_argument("--workspace", default=None, help="工作空间名(可选,索引库按 $DOCS_SEARCH_WORKSPACE 分割;不填=默认库)")
     parser.add_argument(
         "--url", default=None,
         help="连接已运行的 docs-search 服务(如 http://192.168.1.10:8765);提供后走远程模式,不读本地目录。"
@@ -485,7 +503,7 @@ def main():
         return
 
     docs_dir = resolve_docs_dir(args.dir or args.dir_pos)
-    db_path = resolve_db_path(docs_dir, args.db)
+    db_path = resolve_db_path(docs_dir, args.db, resolve_workspace(args.workspace))
 
     if not docs_dir.exists():
         # 警告走 stderr(stdio 保持协议纯净);目录照常创建,空库可通过 docs_info 观察

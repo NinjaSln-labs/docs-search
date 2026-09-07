@@ -123,8 +123,9 @@ class RemoteClient:
     def show(self, path):
         return self._request("GET", "/api/show", {"path": path})
 
-    def upload(self, filename, content):
-        return self._request("POST", "/api/upload", {"filename": filename}, content.encode("utf-8"))
+    def upload(self, filename, content, if_exists="error"):
+        query = {"filename": filename, "if_exists": if_exists}
+        return self._request("POST", "/api/upload", query, content.encode("utf-8"))
 
     def delete(self, path):
         return self._request("POST", "/api/delete", {"path": path})

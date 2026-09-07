@@ -7,6 +7,7 @@
  * 前置: pip install docs-search(提供 docs-search-mcp 命令)
  *       或设 DOCS_SEARCH_MCP_CMD / DOCS_SEARCH_MCP_ARGS 指定启动命令与参数。
  * 目录: DOCS_SEARCH_DIR 环境变量 > ./docs(pi 启动目录)。
+ * 工作空间: DOCS_SEARCH_WORKSPACE(可选)按命名空间分割索引库,不填=默认库。
  * 远程模式: 设 DOCS_SEARCH_URL(如 http://192.168.1.10:8765)时改连已运行的 docs-search
  *       服务(--url 启动 MCP server,不读本地目录),适合服务已启动/异机共享文档库的场景。
  *       远端启用认证时,凭据用 DOCS_SEARCH_TOKEN(Bearer)或 DOCS_SEARCH_USER+DOCS_SEARCH_PASSWORD(Basic)。
@@ -56,7 +57,8 @@ export default function docsSearchExtension(pi: ExtensionAPI) {
 
 	const docsDir = process.env.DOCS_SEARCH_DIR || "docs";
 	const serviceUrl = process.env.DOCS_SEARCH_URL || "";
-	const target = serviceUrl ? `url ${serviceUrl}` : `dir ${docsDir}`;
+	const workspace = process.env.DOCS_SEARCH_WORKSPACE || "";
+	const target = serviceUrl ? `url ${serviceUrl}` : `dir ${docsDir}${workspace ? ` ws:${workspace}` : ""}`;
 	// 远程认证凭据(远端服务启用了认证时透传给 --token/--user/--password)
 	const credArgs: string[] = [];
 	if (process.env.DOCS_SEARCH_TOKEN) credArgs.push("--token", process.env.DOCS_SEARCH_TOKEN);
@@ -73,7 +75,7 @@ export default function docsSearchExtension(pi: ExtensionAPI) {
 		const extraArgs = (process.env.DOCS_SEARCH_MCP_ARGS || "").split(" ").filter(Boolean);
 		const args = serviceUrl
 			? [...extraArgs, ...credArgs, "--url", serviceUrl]
-			: [...extraArgs, "--dir", docsDir];
+			: [...extraArgs, ...(workspace ? ["--workspace", workspace] : []), "--dir", docsDir];
 		const child = spawn(cmd, args, {
 			stdio: ["pipe", "pipe", "pipe"],
 		});

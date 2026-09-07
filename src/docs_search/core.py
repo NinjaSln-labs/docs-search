@@ -2,10 +2,13 @@
 
 路径解析规则（不绑定任何本地/个人路径）:
   文档目录:  --dir 参数 > 环境变量 DOCS_SEARCH_DIR > ./docs（当前工作目录下）
-  索引库:    --db 参数 > 环境变量 DOCS_SEARCH_DB > ~/.docs-search/<目录哈希>/index.db
-             按文档目录哈希隔离，多个文档库可并存互不干扰。
+  索引库:    --db 参数 > 环境变量 DOCS_SEARCH_DB > ~/.docs-search[/<工作空间>]/<目录哈希>/index.db
+             按文档目录哈希隔离；可选 --workspace（环境变量 DOCS_SEARCH_WORKSPACE）在哈希上再加一层
+             命名空间，不同工作空间天然分割（不填 = 默认库，路径与旧版一致）
   远程服务:  --url 参数 > 环境变量 DOCS_SEARCH_URL（可选；配置后走远程模式，
              不读本地目录，改连已运行的 docs-search 服务，见 remote.py）
+
+上传同名策略（if_exists）: error（默认，重名提示）> overwrite（强制覆盖）> keep（生成 -N 新文件）
 """
 
 import hashlib
@@ -20,7 +23,11 @@ from pathlib import Path
 ENV_DOCS_DIR = "DOCS_SEARCH_DIR"
 ENV_DB_PATH = "DOCS_SEARCH_DB"
 ENV_SERVICE_URL = "DOCS_SEARCH_URL"
+ENV_WORKSPACE = "DOCS_SEARCH_WORKSPACE"
 DEFAULT_DOCS_DIRNAME = "docs"
+
+# 上传同名冲突策略（error=默认提示 / overwrite=覆盖 / keep=生成 -N 新文件）
+IF_EXISTS_CHOICES = ("error", "overwrite", "keep")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 上传体积上限 10MB
 
 
@@ -54,14 +61,31 @@ def resolve_service_url(explicit=None):
     return val.strip() or None
 
 
-def resolve_db_path(docs_dir, explicit=None):
-    """解析索引库路径: --db > DOCS_SEARCH_DB > ~/.docs-search/<hash>/index.db"""
+def resolve_workspace(explicit=None):
+    """解析工作空间名: --workspace > $DOCS_SEARCH_WORKSPACE;未配置返回 None(默认库)。
+    危险字符消毒（用于索引库目录名，防路径穿越）"""
+    import re
+
+    val = explicit or os.environ.get(ENV_WORKSPACE) or ""
+    val = val.strip()
+    if not val:
+        return None
+    val = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", val).strip(". ")
+    return val or None
+
+
+def resolve_db_path(docs_dir, explicit=None, workspace=None):
+    """解析索引库路径: --db > $DOCS_SEARCH_DB > ~/.docs-search[/<workspace>]/<目录哈希>/index.db"""
     if explicit:
         return Path(explicit).expanduser().resolve()
     if os.environ.get(ENV_DB_PATH):
         return Path(os.environ[ENV_DB_PATH]).expanduser().resolve()
     key = hashlib.sha1(str(docs_dir).replace("\\", "/").lower().encode("utf-8")).hexdigest()[:12]
-    return Path.home() / ".docs-search" / key / "index.db"
+    root = Path.home() / ".docs-search"
+    ws = resolve_workspace(workspace)
+    if ws:
+        root = root / ws  # 工作空间层: ~/.docs-search/<ws>/<hash>/index.db
+    return root / key / "index.db"
 
 
 def meta_path(db_path):
@@ -210,7 +234,7 @@ def sanitize_filename(name):
 
 
 def dedupe_target(docs_dir, name):
-    """在 docs_dir/uploads/ 下生成不重名的目标路径"""
+    """在 docs_dir/uploads/ 下生成不重名的目标路径（if_exists=keep 的内部实现）"""
     updir = docs_dir / "uploads"
     updir.mkdir(parents=True, exist_ok=True)
     target = updir / name
@@ -222,3 +246,25 @@ def dedupe_target(docs_dir, name):
         if not cand.exists():
             return cand
     return None
+
+
+def resolve_upload_target(docs_dir, name, if_exists="error"):
+    """按同名策略分配上传目标，返回 (Path|None, str|None): (目标路径, None) 或 (None, 错误消息)。
+
+    if_exists: error（默认，重名提示不写）> overwrite（强制覆盖原文件）> keep（生成 -N 新文件）
+    """
+    if if_exists not in IF_EXISTS_CHOICES:
+        return None, f"未知 if_exists 取值: {if_exists!r}（可选: error/overwrite/keep）"
+    updir = docs_dir / "uploads"
+    updir.mkdir(parents=True, exist_ok=True)
+    target = updir / name
+    if not target.exists():
+        return target, None
+    if if_exists == "overwrite":
+        return target, None
+    if if_exists == "keep":
+        t = dedupe_target(docs_dir, name)
+        if t is None:
+            return None, "无法分配目标文件名（同名变体已满 999）"
+        return t, None
+    return None, f"文件已存在: uploads/{name}（同名冲突——传 if_exists=overwrite 覆盖,或 if_exists=keep 生成 -N 新文件）"
