@@ -25,8 +25,12 @@ workspace 是**每次请求/操作**可选的概念，不在服务启动时绑�
 （`--dir` 指定目录或 `./docs`）。同一服务可同时访问任意多个 workspace，天然隔离（上传/删除/
 搜索/统计都只在当前 `ws` 的库内生效）。
 
+**`ws=all`（聚合）**：搜索/列表/统计传 `ws=all` 时跨默认库 + 全部 workspace 聚合，结果带 `ws`
+来源字段（默认库为 `""`）；`workspaces` 字段列出全部库名。写操作（上传/删除）不支持 `all`（400）。
+
 ```bash
 curl 'http://127.0.0.1:8765/api/search?q=MCP&ws=proj-a'          # 搜 proj-a 库
+curl 'http://127.0.0.1:8765/api/search?q=MCP&ws=all'              # 跨全部库搜索
 curl -X POST 'http://127.0.0.1:8765/api/upload?filename=n.md&ws=proj-b' --data-binary @n.md
 ```
 

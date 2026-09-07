@@ -41,7 +41,7 @@ python -m pytest tests/test_mcp.py                      # 只跑 MCP E2E
 - 索引库：`--db` > `$DOCS_SEARCH_DB` > `~/.docs-search/<目录哈希>/index.db`
 - 工作空间（操作级）：MCP 工具参数 `workspace` / Web `?ws=` / CLI `--workspace`，
   指定即用自包含库 `~/.docs-search/workspaces/<ws>/`（docs + index.db），不填=默认库；
-  不在服务启动时绑定
+  不在服务启动时绑定；搜索/枚举/统计支持 `workspace=all` 跨库聚合（结果带来源）
 - 远程服务（MCP 远程模式）：`--url` > `$DOCS_SEARCH_URL`；未配置则为本地模式
 - 上传同名策略 `if_exists`：`error`（默认，提示不写）> `overwrite`（覆盖）> `keep`（`-N` 新文件）
 - **禁止**在源码中出现任何个人/本机绝对路径（测试 `test_no_hardcoded_paths` 会拦截）

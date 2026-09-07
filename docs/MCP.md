@@ -60,11 +60,11 @@ Cursor 远程模式示例：
 
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `docs_search` | `query`(必填,空格分隔多关键词 AND)、`limit`、`cat` | 检索,返回路径 + 150 字摘要;全文跟 `docs_read` |
-| `docs_read` | `path`(必填,相对路径) | 读全文 |
-| `docs_write` | `filename`(仅 `.md`)、`content`、`if_exists`(`error`/`overwrite`/`keep`) | 写入 `uploads/` 并即刻索引;同名默认提示(`error`,不写不覆盖),`overwrite` 强制覆盖,`keep` 生成 `-1/-2` 新文件;**勿写密钥/隐私** |
-| `docs_delete` | `path`(必须 `uploads/` 下) | 删除已写入文档;库内文档拒绝(设计如此) |
-| `docs_info` | `mode`(`list`/`stats`)、`cat`、`workspace` | 枚举文档 / 统计与分类 |
+| `docs_search` | `query`(必填,空格分隔多关键词 AND)、`limit`、`cat`、`workspace` | 检索,返回路径 + 150 字摘要;全文跟 `docs_read`;`workspace="all"` 跨库聚合(结果带来源) |
+| `docs_read` | `path`(必填,相对路径)、`workspace` | 读全文（不支持 `all`） |
+| `docs_write` | `filename`(仅 `.md`)、`content`、`if_exists`(`error`/`overwrite`/`keep`)、`workspace` | 写入 `uploads/` 并即刻索引;同名默认提示(`error`,不写不覆盖),`overwrite` 强制覆盖,`keep` 生成 `-1/-2` 新文件;不支持 `all`;**勿写密钥/隐私** |
+| `docs_delete` | `path`(必须 `uploads/` 下)、`workspace` | 删除已写入文档;库内文档拒绝(设计如此);不支持 `all` |
+| `docs_info` | `mode`(`list`/`stats`)、`cat`、`workspace` | 枚举文档 / 统计与分类;`workspace="all"` 跨库聚合(带来源/库列表) |
 
 本地模式索引在每次调用前自动增量重建,无需手动维护;多关键词是精确子串 AND 匹配(含中文)。
 远程模式不建索引,由已运行的服务端维护。
