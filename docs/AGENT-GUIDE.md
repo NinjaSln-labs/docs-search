@@ -9,7 +9,7 @@
 {
   "name": "docs-search",
   "pypi": "docs-search",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "runtime": "Python >= 3.10",
   "dependencies": [],
   "license": "MIT",
@@ -184,4 +184,4 @@ curl -X POST 'http://127.0.0.1:8765/api/delete?path=uploads/a.md'
 
 ---
 
-*docs-search v1.2.0 · 协议版本随版本号同步 · [文档站首页](index.html)*
+*docs-search v1.3.0 · 协议版本随版本号同步 · [文档站首页](index.html)*
