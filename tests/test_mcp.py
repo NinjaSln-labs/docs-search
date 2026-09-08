@@ -22,11 +22,13 @@ SCRIPT = REPO / "scripts" / "docs-search-mcp.py"
 class McpClient:
     """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应;支持本地(--dir)与远程(--url/--token)"""
 
-    def __init__(self, docs_dir=None, url=None, token=None, env_extra=None):
+    def __init__(self, docs_dir=None, url=None, token=None, proxy=None, env_extra=None):
         if url:
             args = ["--url", url]
             if token:
                 args += ["--token", token]
+            if proxy is not None:
+                args += ["--proxy", proxy]
         else:
             args = [str(docs_dir)]
         env = {
@@ -394,3 +396,42 @@ def test_remote_mode_with_auth_roundtrip(tmp_path, web_server_auth):
     err = bad.proc.stderr.read().decode("utf-8")
     assert rc != 0
     assert "认证失败" in err
+
+
+def test_remote_mode_proxy_direct_arg(tmp_path, web_server):
+    """--proxy direct: 环境代理指向死端口时仍强制直连
+    (典型现场:本机挂系统代理,http_proxy/all_proxy 拦内网或 socks 代理 urllib 不支持)"""
+    base, _ = web_server
+    c = McpClient(
+        url=base, proxy="direct",
+        env_extra={"http_proxy": "http://127.0.0.1:1", "https_proxy": "http://127.0.0.1:1",
+                   "all_proxy": "socks5://127.0.0.1:1", "no_proxy": ""},
+    )
+    try:
+        c.initialize()
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
+        assert "hello.md" in out and "1 results" in out
+    finally:
+        c.close()
+
+
+def test_remote_mode_proxy_env_fallback(tmp_path, web_server):
+    """DOCS_SEARCH_PROXY 环境变量回退(direct 直连哨兵与 --proxy 参数等效)"""
+    base, _ = web_server
+    c = McpClient(url=base, env_extra={"DOCS_SEARCH_PROXY": "direct"})
+    try:
+        c.initialize()
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
+        assert "hello.md" in out
+    finally:
+        c.close()
+
+
+def test_remote_mode_socks_proxy_rejected(tmp_path, web_server):
+    """socks 代理 → 启动即报错退出(纯标准库无 socks 实现,消息给出替代方案)"""
+    base, _ = web_server
+    c = McpClient(url=base, proxy="socks5://127.0.0.1:1080")
+    rc = c.proc.wait(timeout=20)
+    err = c.proc.stderr.read().decode("utf-8")
+    assert rc != 0
+    assert "socks" in err

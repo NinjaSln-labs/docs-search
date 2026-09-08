@@ -17,6 +17,9 @@
 
 远程认证: 服务端启用了认证时,用 --token(Bearer)或 --user/--password(Basic)携带凭据,
   环境变量回退: $DOCS_SEARCH_TOKEN / $DOCS_SEARCH_USER / $DOCS_SEARCH_PASSWORD。
+连接代理: 远程模式连接层默认跟随环境/系统代理(http_proxy/all_proxy/no_proxy,urllib 惯例);
+  --proxy <http://...>(或 $DOCS_SEARCH_PROXY)显式指定代理,--proxy direct 强制直连(清空代理);
+  socks 代理不支持(纯标准库限制),配置时显式报错。
 
 协议实现(JSON-RPC 2.0 over stdio,按行分隔——MCP stdio 惯例):
   initialize / notifications/initialized / ping
@@ -32,6 +35,7 @@ import argparse
 import json
 import os
 import sys
+from urllib.request import getproxies
 
 from . import __version__
 from .core import (
@@ -586,6 +590,12 @@ def main():
     parser.add_argument("--token", default=None, help="远程模式 Bearer token(默认 $DOCS_SEARCH_TOKEN)")
     parser.add_argument("--user", default=None, help="远程模式 Basic 认证用户名(默认 $DOCS_SEARCH_USER;与 --password 成对)")
     parser.add_argument("--password", default=None, help="远程模式 Basic 认证密码(默认 $DOCS_SEARCH_PASSWORD)")
+    parser.add_argument(
+        "--proxy", default=None,
+        help="远程模式连接代理(如 http://proxy.corp:8080;裸 host:port 自动补 scheme);"
+        "direct/none 强制直连(忽略 http_proxy/all_proxy 等环境代理)。"
+        "默认 $DOCS_SEARCH_PROXY;未配置则跟随环境/系统代理",
+    )
     args = parser.parse_args()
 
     url = resolve_service_url(args.url)
@@ -593,6 +603,7 @@ def main():
         token = args.token or os.environ.get("DOCS_SEARCH_TOKEN")
         user = args.user or os.environ.get("DOCS_SEARCH_USER")
         password = args.password or os.environ.get("DOCS_SEARCH_PASSWORD")
+        proxy = args.proxy or os.environ.get("DOCS_SEARCH_PROXY") or None
         if token and (user or password):
             print("错误: --token 与 --user/--password 互斥，只能启用一种认证方式", file=sys.stderr)
             sys.exit(1)
@@ -600,7 +611,7 @@ def main():
             print("错误: --user 与 --password 必须成对提供", file=sys.stderr)
             sys.exit(1)
         try:
-            client = RemoteClient(url, token=token, username=user, password=password)
+            client = RemoteClient(url, token=token, username=user, password=password, proxy=proxy)
         except RemoteError as e:
             print(f"错误: {e}", file=sys.stderr)
             sys.exit(1)
@@ -610,6 +621,8 @@ def main():
         except RemoteError as e:
             print(f"错误: 无法连接 docs-search 服务({url}): {e}", file=sys.stderr)
             print("提示: 先启动 docs-search-web,或确认 --url/$DOCS_SEARCH_URL 指向带 /api/* 的服务", file=sys.stderr)
+            if proxy is None and getproxies():
+                print("提示: 检测到环境/系统代理(http_proxy 等)——若服务在本机/内网,可 --proxy direct 直连", file=sys.stderr)
             sys.exit(1)
         if "error" in probe:
             print(f"错误: 服务探活失败: {probe['error']}", file=sys.stderr)

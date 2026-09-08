@@ -13,6 +13,9 @@ MCP server 远程模式使用: 用户已运行 docs-search-web（或任意接口
 
 认证: 远端服务可启用 Bearer token 或 Basic 认证——客户端用 token / username+password
 构造 Authorization 头（与 web.py 的 AuthConfig 对应）。
+代理: 连接层代理由 opener 决定——未配置跟随环境/系统代理（http_proxy/all_proxy/no_proxy，urllib 惯例）；
+  proxy="direct"/"none"/"off" 强制直连（清空代理，环境代理拦内网/回环时用）；proxy=<URL> 固定走
+  该 HTTP 代理（裸 host:port 补 scheme；socks 协议不支持——纯标准库限制，显式报错）。
 
 错误语义: 业务错误（服务端 JSON error / 非 2xx）返回 dict，不抛异常；
 连接失败/响应格式异常抛 RemoteError。安全防护（.md only、≤10MB、文件名消毒、
@@ -34,6 +37,66 @@ class RemoteError(Exception):
     """远程服务错误（连接失败 / 响应格式异常）"""
 
 
+PROXY_DIRECT_TOKENS = ("none", "direct", "off")  # --proxy 直连哨兵值(大小写不敏感)
+
+
+class _ExplicitProxyHandler(urllib.request.ProxyHandler):
+    """显式代理(--proxy URL)专用 handler——与 stdlib ProxyHandler 的唯一差异:
+    跳过 proxy_bypass 旁路检查。显式配置是用户明确意图,不应被环境 no_proxy/
+    系统代理排除规则(如 Windows 注册表 ProxyOverride 含 127.*)静默推翻;
+    未配 --proxy 的默认路径仍走 stdlib 原生 handler,完整保留 bypass 语义。
+    代理值已由 normalize_proxy 规范化为 http(s)://[user:pass@]host:port。
+    """
+
+    def __init__(self, proxy_url):
+        super().__init__({})  # 不注册 stdlib scheme 映射,避免与覆盖方法叠加
+        self._proxy_url = proxy_url
+
+    def _proxy_open(self, req):
+        # 语义对齐 stdlib ProxyHandler.proxy_open(除 bypass 外),仅用公开 API:
+        # user:pass@ → Proxy-Authorization;set_proxy 记录 CONNECT 隧道目标后交回 chain
+        parsed = urllib.parse.urlsplit(self._proxy_url)
+        if parsed.username and parsed.password:
+            raw = f"{urllib.parse.unquote(parsed.username)}:{urllib.parse.unquote(parsed.password)}"
+            req.add_header("Proxy-authorization", "Basic " + base64.b64encode(raw.encode()).decode("ascii"))
+        hostport = urllib.parse.unquote(parsed.netloc.rpartition("@")[2])
+        req.set_proxy(hostport, req.type)
+        # 落空返回 None(与 stdlib 同 scheme 代理分支一致) → 交给 HTTPHandler/HTTPSHandler(https 走 CONNECT)
+
+    def http_open(self, req):
+        return self._proxy_open(req)
+
+    def https_open(self, req):
+        return self._proxy_open(req)
+
+
+def normalize_proxy(proxy):
+    """清洗代理配置: 返回 (kind, value)——
+      (None, None)          未配置 → 默认跟随环境/系统代理(urllib 惯例)
+      ("direct", None)      强制直连 → 清空代理(忽略 http_proxy/all_proxy 等环境代理)
+      ("url", "http://...") 显式 HTTP 代理(裸 host:port 自动补 http://)
+    socks 系协议/非法地址抛 RemoteError(纯标准库 urllib 无 socks 实现)。
+    scheme 判定用 '://' 前缀检测(同 normalize_url,避开 3.10 urlsplit 对裸串的猜测差异)。
+    """
+    val = (proxy or "").strip()
+    if not val:
+        return None, None
+    if val.lower() in PROXY_DIRECT_TOKENS:
+        return "direct", None
+    if "://" not in val:
+        val = "http://" + val
+    parsed = urllib.parse.urlsplit(val)
+    if parsed.scheme in ("socks", "socks4", "socks4a", "socks5", "socks5h"):
+        raise RemoteError(
+            f"代理协议不支持: {parsed.scheme}://(纯标准库 urllib 无 socks 实现;"
+            "换用代理的 http 端口,或 direct 直连)")
+    if parsed.scheme != "http" or not parsed.netloc:
+        # https 代理(TLS 代理)不被 stdlib 连接序列支持(先明文 CONNECT 后 TLS,语义混乱)——显式报错;
+        # https 目标经 http 代理由 stdlib CONNECT 隧道处理,不受影响
+        raise RemoteError(f"非法代理地址: {proxy!r}(仅支持 http://proxy:port,或 direct 直连)")
+    return "url", val
+
+
 def normalize_url(url):
     """清洗服务地址: 补 scheme、去尾部斜杠；非法返回 None。
     补 scheme 用 '://' 判定（不依赖 urlsplit 对裸串的 scheme 猜测——
@@ -52,7 +115,7 @@ def normalize_url(url):
 class RemoteClient:
     """连接已运行的 docs-search 服务；方法与 /api/* 端点一一对应，返回解析后的 JSON"""
 
-    def __init__(self, base_url, token=None, username=None, password=None):
+    def __init__(self, base_url, token=None, username=None, password=None, proxy=None):
         self.base = normalize_url(base_url)
         if not self.base:
             raise RemoteError(f"非法服务地址: {base_url!r}（应为 http://ip:port 或 http://host:port）")
@@ -65,6 +128,14 @@ class RemoteClient:
             self._auth_header = "Basic " + base64.b64encode(raw).decode("ascii")
         else:
             self._auth_header = None
+        # 连接层代理: 每客户端独立 opener(不用全局 urlopen 的缓存 opener,环境读取时机确定,可测)
+        kind, value = normalize_proxy(proxy)
+        if kind == "direct":
+            self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        elif kind == "url":
+            self._opener = urllib.request.build_opener(_ExplicitProxyHandler(value))
+        else:
+            self._opener = urllib.request.build_opener()  # 默认: 与 urlopen 同源,跟随环境/系统代理
 
     def _request(self, method, path, query=None, body=None):
         url = self.base + path
@@ -78,7 +149,7 @@ class RemoteClient:
         last = None
         for attempt in range(HTTP_ATTEMPTS):
             try:
-                with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+                with self._opener.open(req, timeout=HTTP_TIMEOUT) as resp:
                     raw = resp.read().decode("utf-8")
                 break
             except HTTPError as e:

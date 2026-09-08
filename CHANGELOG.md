@@ -2,6 +2,19 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Added
+
+- **MCP 远程模式连接代理**（`--proxy` / `$DOCS_SEARCH_PROXY`）：连接已运行服务时可显式控制代理——
+  `--proxy http://proxy:port` 走指定 HTTP 代理（裸 `host:port` 自动补 scheme、支持 `user:pass@` 代理认证，
+  显式配置不被 `no_proxy`/系统排除规则旁路）；`--proxy direct`（或 `none`/`off`）忽略一切环境代理强制直连
+  （环境代理为 socks5、或代理拦内网/回环时的解法）；未配置时默认跟随环境/系统代理（`http_proxy`/`all_proxy`/
+  `no_proxy`，urllib 惯例，行为不变）；socks/https 代理协议不被纯标准库支持，配置时显式报错（含替代建议）；
+  探活失败且检测到环境代理时，错误提示建议 `--proxy direct`；pi 扩展透传 `DOCS_SEARCH_PROXY`；
+  文档同步 MCP.md/AGENT-GUIDE/API·SERVER-CONTRACT/DEVELOPMENT/README 双语；
+  tests 新增代理路由/直连哨兵/socks 拒绝/E2E 环境变量回退（98→112 用例）
+
 ## [1.2.0] — 2026-09-08
 
 ### Added

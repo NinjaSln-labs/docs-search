@@ -26,6 +26,9 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 docs-search-mcp --url http://192.168.1.10:8765
 # 或环境变量(--url 优先):
 DOCS_SEARCH_URL=http://192.168.1.10:8765 docs-search-mcp
+# 连接代理: 默认跟随环境/系统代理(http_proxy 等);干扰时强制直连或显式指定
+docs-search-mcp --url http://192.168.1.10:8765 --proxy direct          # 忽略一切环境代理,直连
+DOCS_SEARCH_PROXY=http://proxy.corp:8080 docs-search-mcp --url http://192.168.1.10:8765  # 走指定代理
 ```
 
 - 工具输出格式与本地模式一致（各 agent 行为不变），后端改为 HTTP 调用服务的 `/api/*`
@@ -34,6 +37,12 @@ DOCS_SEARCH_URL=http://192.168.1.10:8765 docs-search-mcp
 - **认证**（远端服务启用了认证时，二选一）：`--token`（Bearer）或 `--user/--password`（Basic）；
   环境变量回退 `$DOCS_SEARCH_TOKEN` / `$DOCS_SEARCH_USER` / `$DOCS_SEARCH_PASSWORD`；
   凭据缺失/错误时探活直接失败并报错退出（MCP 客户端会展示），不静默挂起
+- **连接代理**（连接层，默认跟随环境/系统代理 `http_proxy`/`all_proxy` 等，`no_proxy` 中的主机仍直连）：
+  `--proxy http://proxy.corp:8080` 显式指定 HTTP 代理（裸 `host:port` 自动补 `http://`，支持
+  `user:pass@` 代理认证；显式配置不被 no_proxy/注册表排除规则旁路）；`--proxy direct`（或 `none`/`off`）
+  强制直连，忽略一切环境代理——环境代理为 socks5（标准库 urllib 不支持 socks，会显式报错）、
+  或代理无法转发内网地址时用它；环境变量 `DOCS_SEARCH_PROXY` 同义（`--proxy` 优先）；
+  探活失败时若检测到环境代理，错误提示会建议 `--proxy direct`
 - 启动时探活一次（`/api/stats`）：连不上立刻报错退出（MCP 客户端会展示并自动重启重试），不挂起无输出
 - 适用场景：文档库在另一台机器/容器、服务已由他人启动、多 agent 共享同一服务
 - **安全由服务端强制执行**（上传 `.md` only/消毒、删除仅限 `uploads/`；服务端可启用 Bearer/Basic 认证）——只连可信服务，配地址前确认网络可达与访问边界
@@ -211,6 +220,8 @@ cp integrations/pi/docs-search.ts .pi/extensions/docs-search.ts
 远程模式: 设 `DOCS_SEARCH_URL`(如 `http://192.168.1.10:8765`)时改连已运行的服务
 (`--url` 启动 MCP server,不读本地目录),适合服务已启动/异机共享文档库的场景;
 远端启用认证时,凭据用 `DOCS_SEARCH_TOKEN`(Bearer)或 `DOCS_SEARCH_USER`+`DOCS_SEARCH_PASSWORD`(Basic)。
+连接代理: `DOCS_SEARCH_PROXY=http://ip:port` 走指定代理,或 `direct`/`none` 强制直连(忽略环境代理);
+未设置时跟随系统/环境代理(`http_proxy` 等)。
 要求已 `pip install docs-search`;或设 `DOCS_SEARCH_MCP_CMD="python <仓库>/scripts/docs-search-mcp.py"` 指定启动命令。
 改完 `/reload` 热加载;工具名:`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。
 
@@ -225,7 +236,7 @@ cp integrations/pi/docs-search.ts .pi/extensions/docs-search.ts
 ## 安全注意
 
 - 本地模式: server 只操作 `--dir` 指定目录;写入仅限 `uploads/` 且文件名消毒(路径穿越降级为 basename);无网络(纯 stdio);文档库对本机进程可读——**不要写入密钥/隐私原始数据,先脱敏**
-- 远程模式: 仅向 `--url`/`$DOCS_SEARCH_URL` 指定的服务发请求,上传/删除防护与认证(Bearer/Basic)由服务端强制执行——**只连可信服务,凭据不要写进会话/文档,只放配置或环境变量**
+- 远程模式: 仅向 `--url`/`$DOCS_SEARCH_URL` 指定的服务发请求(可经 `--proxy` 指定的代理),上传/删除防护与认证(Bearer/Basic)由服务端强制执行——**只连可信服务,凭据不要写进会话/文档,只放配置或环境变量**
 - 漏洞勿公开披露:走 [SECURITY.md](SECURITY.md) 的私密报告渠道
 
 ## 反馈

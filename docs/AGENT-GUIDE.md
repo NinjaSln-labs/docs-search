@@ -96,6 +96,9 @@ curl 'http://127.0.0.1:8765/api/list?ws=all'  # 跨全部库枚举（结果带 w
   `$DOCS_SEARCH_URL`，代理到已运行的 docs-search 服务，不读本地目录——服务已启动/异机共享时用）
 - 远程认证：远端服务启用认证时，`--token`（Bearer）或 `--user/--password`（Basic），
   环境变量 `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` / `DOCS_SEARCH_PASSWORD` 回退；凭据错误探活即失败退出
+- 远程代理：连接层默认跟随环境/系统代理（`http_proxy`/`all_proxy` 等）；`--proxy http://ip:port`
+  显式指定 HTTP 代理，`--proxy direct` 忽略环境代理直连（环境变量 `DOCS_SEARCH_PROXY` 回退；
+  socks 代理不支持——纯标准库限制，显式报错）
 - pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server（远程模式设 `DOCS_SEARCH_URL`）
 
 五家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：

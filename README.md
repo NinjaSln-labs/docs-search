@@ -108,6 +108,7 @@ ZCode（Settings → MCP Servers）、DSH（`@deepseek-ai/dsh-mcp-client` 插件
 # Cursor（远程模式——服务已启动/异机共享时用；远端启用认证时带 --token/--user/--password）
 { "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--url", "http://192.168.1.10:8765", "--token", "<TOKEN>"] } } }
 # 或环境变量: DOCS_SEARCH_URL=http://192.168.1.10:8765 docs-search-mcp
+# 连接代理: 默认跟随环境代理;干扰时 --proxy direct 直连,或 --proxy http://代理:端口 指定(DOCS_SEARCH_PROXY)
 
 # 后端独立启动为远端服务（非回环监听强制要求认证）
 docs-search-web /path/to/docs --host 0.0.0.0 --token <TOKEN>

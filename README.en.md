@@ -100,6 +100,7 @@ the MCP server can proxy to it instead of reading a local directory:
 # Cursor (remote mode — service already up / shared library; add --token/--user/--password if the remote requires auth)
 { "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--url", "http://192.168.1.10:8765", "--token", "<TOKEN>"] } } }
 # or via env: DOCS_SEARCH_URL=http://192.168.1.10:8765 docs-search-mcp
+# Connection proxy: follows env proxies by default; use --proxy direct to bypass, or --proxy http://proxy:port (DOCS_SEARCH_PROXY)
 
 # Backend as a standalone remote service (auth required for non-loopback listening)
 docs-search-web /path/to/docs --host 0.0.0.0 --token <TOKEN>

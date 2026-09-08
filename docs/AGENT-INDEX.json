@@ -35,6 +35,11 @@
         "docs_write": { "args": { "filename": "必填，仅 .md basename", "content": "必填，UTF-8 文本 ≤10MB", "if_exists": "error(默认，重名提示)/overwrite(覆盖)/keep(-N 新文件)", "workspace": "可选（不支持 all）" }, "note": "写入 uploads/ 并即刻索引；同名默认 409/isError 提示" },
         "docs_delete": { "args": { "path": "必须位于 uploads/ 下", "workspace": "可选（不支持 all）" } },
         "docs_info": { "args": { "mode": "list（默认）或 stats", "cat": "list 模式可选过滤", "workspace": "可选；all=跨库聚合（带库列表）" } }
+      },
+      "remote_mode": {
+        "url": "--url > $DOCS_SEARCH_URL；未配置=本地模式",
+        "auth": "--token(Bearer) 或 --user/--password(Basic)；$DOCS_SEARCH_TOKEN / $DOCS_SEARCH_USER + $DOCS_SEARCH_PASSWORD 回退",
+        "proxy": "--proxy > $DOCS_SEARCH_PROXY；http://proxy:port=指定代理（不支持 socks，显式报错），direct/none/off=忽略环境代理直连；未配置=跟随环境/系统代理"
       }
     },
 

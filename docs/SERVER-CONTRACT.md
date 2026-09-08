@@ -79,7 +79,8 @@
 - **Basic**：校验 `Authorization: Basic <base64(user:password)>`
 - 未带/错带凭据 → `401` + `{"error": "unauthorized..."}` + `WWW-Authenticate` 头
 - 客户端侧：`docs-search-mcp --token <T>` 或 `--user <U> --password <P>`（环境变量
-  `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` / `DOCS_SEARCH_PASSWORD` 回退）
+  `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` / `DOCS_SEARCH_PASSWORD` 回退）；
+  连接代理用 `--proxy <http://proxy:port>` 或 `--proxy direct`（`DOCS_SEARCH_PROXY` 回退）
 
 ## 5. workspace 语义
 
