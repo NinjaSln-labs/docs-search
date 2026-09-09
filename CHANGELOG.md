@@ -2,6 +2,15 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Fixed
+
+- **pi 扩展 `docs_info` mode 参数 schema 对弱模型服从性差**（[#1](https://github.com/NinjaSln-labs/docs-search/issues/1)）：
+  TypeBox `Type.Union([Type.Literal(...)])` 序列化为 `anyOf[{const},{const}]`，弱模型易幻觉枚举外值，
+  被客户端校验拒绝后循环空转；改平铺 `Type.String({enum:["list","stats"]})`，与 MCP server 本体
+  （`src/docs_search/mcp.py` TOOLS）及其他四家 agent 的工具表一致。MCP server 本体不受影响，无需升级包。
+
 ## [1.3.0] — 2026-09-08
 
 ### Added
