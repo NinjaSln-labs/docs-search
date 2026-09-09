@@ -93,9 +93,12 @@ def _json_write(path: Path, data) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def build_command(mode: str, value: str) -> list[str]:
-    """构造 docs-search-mcp 启动命令。"""
-    return ["docs-search-mcp", "--dir" if mode == "local" else "--url", value]
+def build_command(mode: str, value: str, extra_args: list[tuple[str, str]] | None = None) -> list[str]:
+    """构造 docs-search-mcp 启动命令；extra_args 为 --mcp-arg 指定的附加参数（key/value 对）。"""
+    cmd = ["docs-search-mcp", "--dir" if mode == "local" else "--url", value]
+    for k, v in (extra_args or []):
+        cmd += [f"--{k.lstrip('-')}", v]
+    return cmd
 
 
 class BaseInstaller:
@@ -114,7 +117,7 @@ class BaseInstaller:
         """返回 "absent" | "exists"（目标条目是否已配置）。默认未实现。"""
         raise NotImplementedError
 
-    def install(self, mode: str, value: str, force: bool) -> str:
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         """写入配置。返回人类可读结果描述。"""
         raise NotImplementedError
 
@@ -148,7 +151,7 @@ class JsonMapInstaller(BaseInstaller):
         servers = data.get(self.server_key, {}) if isinstance(data, dict) else {}
         return "exists" if SERVER_NAME in servers else "absent"
 
-    def install(self, mode: str, value: str, force: bool) -> str:
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         p = self.config_path
         if p.exists():
             try:
@@ -160,9 +163,10 @@ class JsonMapInstaller(BaseInstaller):
         servers = data.setdefault(self.server_key, {})
         if SERVER_NAME in servers and not force:
             return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
+        cmd = build_command(mode, value, extra_args)
         servers[SERVER_NAME] = {
-            "command": build_command(mode, value)[0],
-            "args": build_command(mode, value)[1:],
+            "command": cmd[0],
+            "args": cmd[1:],
             "env": {},
         }
         _json_write(p, data)
@@ -228,7 +232,7 @@ class OpenCodeInstaller(JsonMapInstaller):
         servers = mcp.get("servers", {}) if isinstance(mcp, dict) else {}
         return "exists" if SERVER_NAME in servers else "absent"
 
-    def install(self, mode: str, value: str, force: bool) -> str:
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         p = self.config_path
         if p.exists():
             try:
@@ -243,7 +247,7 @@ class OpenCodeInstaller(JsonMapInstaller):
             return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
         servers[SERVER_NAME] = {
             "type": "local",
-            "command": build_command(mode, value),
+            "command": build_command(mode, value, extra_args),
             "environment": {},
         }
         _json_write(p, data)
@@ -275,7 +279,7 @@ class ZCodeInstaller(JsonMapInstaller):
         servers = mcp.get("servers", {}) if isinstance(mcp, dict) else {}
         return "exists" if SERVER_NAME in servers else "absent"
 
-    def install(self, mode: str, value: str, force: bool) -> str:
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         p = self.config_path
         if p.exists():
             try:
@@ -288,9 +292,10 @@ class ZCodeInstaller(JsonMapInstaller):
         servers = mcp.setdefault("servers", {})
         if SERVER_NAME in servers and not force:
             return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
+        cmd = build_command(mode, value, extra_args)
         servers[SERVER_NAME] = {
-            "command": build_command(mode, value)[0],
-            "args": build_command(mode, value)[1:],
+            "command": cmd[0],
+            "args": cmd[1:],
             "enable": True,
         }
         _json_write(p, data)
@@ -321,8 +326,8 @@ class CliInstaller(BaseInstaller):
             return "absent"
         return "exists" if self.check_needle in out else "absent"
 
-    def install(self, mode: str, value: str, force: bool) -> str:
-        cmd = build_command(mode, value)
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
+        cmd = build_command(mode, value, extra_args)
         if self.entry_status(mode) == "exists" and not force:
             return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
         try:
@@ -410,7 +415,7 @@ class DshInstaller(BaseInstaller):
                 return "exists"
         return "absent"
 
-    def install(self, mode: str, value: str, force: bool) -> str:
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         profiles = self._profiles()
         if not profiles:
             return "跳过：未发现 ~/.dsh/profiles/ 下的 profile（先 dsh plugin --profile <name> add）"
@@ -433,7 +438,7 @@ class DshInstaller(BaseInstaller):
                 "        serverName: docs-search\n"
                 "        transport: stdio\n"
                 "        command: docs-search-mcp\n"
-                f"        args: {build_command(mode, value)!r}\n"
+                f"        args: {build_command(mode, value, extra_args)!r}\n"
             )
             if exists_entry and force:
                 old = _remove_entry_block(old, self.entry_id)
@@ -481,7 +486,7 @@ class PiInstaller(BaseInstaller):
             return "exists"
         return "exists_different"  # 已安装但内容与仓库不同（可能是自定义/旧版）
 
-    def install(self, mode: str, value: str, force: bool) -> str:
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         src = self._repo_ext()
         if src is None:
             return "跳过：未找到仓库 integrations/pi/docs-search.ts（pip 安装场景请按 docs/MCP.md 手动 cp）"
@@ -516,6 +521,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     target.add_argument("--dir", metavar="PATH", help="本地模式：文档根目录（默认 ./docs）")
     target.add_argument("--url", metavar="URL", help="远程模式：已运行 docs-search 服务地址（认证走环境变量回退）")
     p.add_argument("--agents", metavar="LIST", help="子集，逗号分隔（默认全部检测到的）")
+    p.add_argument("--mcp-arg", metavar="KEY=VALUE", action="append", default=[],
+                   help="追加 docs-search-mcp 启动参数（可重复），如 --mcp-arg proxy=direct（认证参数也可，但注意会明文落盘，建议用环境变量回退）")
     p.add_argument("--list", action="store_true", help="只列出检测到的 agent 与配置状态，不写入")
     p.add_argument("--dry-run", action="store_true", help="预览将要执行的写入，不落盘")
     p.add_argument("--force", action="store_true", help="覆盖已存在的 docs-search 条目（默认跳过）")
@@ -547,7 +554,16 @@ def main(argv: list[str] | None = None) -> int:
         print("未指定有效 agent（可用: " + ", ".join(AGENTS) + "）")
         return 2
 
-    print(f"目标: {mode} 模式（{'--dir ' + value if mode == 'local' else '--url ' + value}）")
+    extra_args: list[tuple[str, str]] = []
+    for kv in args.mcp_arg:
+        if "=" not in kv:
+            print(f"--mcp-arg 格式应为 KEY=VALUE，收到：{kv}")
+            return 2
+        k, v = kv.split("=", 1)
+        extra_args.append((k.strip(), v.strip()))
+
+    print(f"目标: {mode} 模式（{'--dir ' + value if mode == 'local' else '--url ' + value}）"
+          + (f" + {len(extra_args)} 个附加参数" if extra_args else ""))
     for name in wanted:
         inst = INSTALLERS[name]
         if not detected[name]:
@@ -558,7 +574,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {name:<12} [dry-run] 当前条目: {status} → {'覆盖' if args.force and status == 'exists' else '写入' if status == 'absent' else '跳过'}")
             continue
         try:
-            print(f"  {name:<12} {inst.install(mode, value, args.force)}")
+            print(f"  {name:<12} {inst.install(mode, value, args.force, extra_args)}")
         except Exception as e:  # noqa: BLE001 -- 单家失败不阻断其他家
             print(f"  {name:<12} 出错：{e}")
     return 0

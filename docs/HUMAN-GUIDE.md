@@ -49,6 +49,8 @@ docs-search-install --url https://docs.example.com
 docs-search-install --dir ./docs --dry-run
 docs-search-install --dir ./docs --agents pi,cursor,opencode
 docs-search-install --dir ./docs --force        # 覆盖前自动备份 .bak
+# 追加 docs-search-mcp 启动参数（可重复；认证建议走环境变量回退，避免明文落盘）：
+docs-search-install --url https://docs.example.com --mcp-arg proxy=direct --mcp-arg proxy-user=u:pass
 ```
 
 各家写入方式与配置格式见 [MCP.md](MCP.md)（九家配置节）；未安装的 agent 自动跳过。

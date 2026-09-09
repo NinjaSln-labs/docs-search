@@ -114,6 +114,44 @@ def test_json_missing_file_creates(fake_home):
     assert inst.entry_status("local") == "exists"
 
 
+def test_extra_args_appended_to_config(fake_home):
+    """--mcp-arg 透传：附加参数追加到各家配置的 args/command。"""
+    extra = [("proxy", "direct"), ("token", "T")]
+    # JSON 类（cursor：command/args 拆分）
+    cur = ai.CursorInstaller()
+    cur.install("remote", "https://srv", force=False, extra_args=extra)
+    data = json.loads((fake_home / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert data["mcpServers"][ai.SERVER_NAME]["args"] == \
+        ["--url", "https://srv", "--proxy", "direct", "--token", "T"]
+    # OpenCode V2：command 数组
+    oc = ai.OpenCodeInstaller()
+    oc.install("local", "/docs", force=False, extra_args=extra)
+    data = json.loads((fake_home / ".config" / "opencode" / "opencode.jsonc").read_text(encoding="utf-8"))
+    assert data["mcp"]["servers"][ai.SERVER_NAME]["command"] == \
+        ["docs-search-mcp", "--dir", "/docs", "--proxy", "direct", "--token", "T"]
+    # dsh patch
+    prof = fake_home / ".dsh" / "profiles" / "p"
+    prof.mkdir(parents=True)
+    (prof / "cordis.patch.yml").write_text("", encoding="utf-8")
+    dsh = ai.DshInstaller()
+    dsh.install("remote", "https://srv", force=False, extra_args=extra)
+    txt = (prof / "cordis.patch.yml").read_text(encoding="utf-8")
+    assert "--proxy" in txt and "--token" in txt
+
+
+def test_main_mcp_arg_cli(fake_home):
+    _write(fake_home / ".cursor" / "mcp.json", {"mcpServers": {}})
+    assert ai.main(["--url", "https://srv", "--agents", "cursor", "--mcp-arg", "proxy=direct"]) == 0
+    data = json.loads((fake_home / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert data["mcpServers"][ai.SERVER_NAME]["args"] == ["--url", "https://srv", "--proxy", "direct"]
+
+
+def test_main_mcp_arg_bad_format(fake_home, capsys):
+    _write(fake_home / ".cursor" / "mcp.json", {"mcpServers": {}})
+    assert ai.main(["--dir", "/docs", "--agents", "cursor", "--mcp-arg", "proxy"]) == 2
+    assert "KEY=VALUE" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------- 文件 patch 类
 
 def test_dsh_patch_append_and_idempotent(fake_home):
