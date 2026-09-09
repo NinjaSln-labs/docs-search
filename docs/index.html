@@ -122,7 +122,7 @@ docs-search-web /path/to/your/docs
           <div class="card"><h3>📦 零依赖</h3><p>纯 Python 标准库（3.10+），运行时零第三方依赖；本地模式无网络请求、无遥测。</p></div>
           <div class="card"><h3>🗂 多库隔离</h3><p>索引库按文档目录哈希隔离（<code>~/.docs-search/&lt;hash&gt;/</code>）；每次操作可带 <code>workspace</code> 切自包含库，<code>all</code> 跨库聚合。</p></div>
           <div class="card"><h3>🔓 不绑定路径</h3><p>文档目录由 <code>--dir</code> / 环境变量 <code>DOCS_SEARCH_DIR</code> / <code>./docs</code> 解析，无任何写死路径。</p></div>
-          <div class="card"><h3>🤝 Agent 对接</h3><p>内置 MCP stdio server：Cursor / ZCode / Qoder / DSH 即插即用；pi 走扩展桥接；支持远程模式（<code>--url</code> 连已运行服务）。</p></div>
+          <div class="card"><h3>🤝 Agent 对接</h3><p>内置 MCP stdio server：Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix 即插即用；pi 走扩展桥接；支持远程模式（<code>--url</code> 连已运行服务）。</p></div>
           <div class="card"><h3>⬆️ 上传接口</h3><p>Web UI 拖拽上传 + <code>POST /api/upload</code>；仅 .md、≤10MB、消毒防穿越；同名默认提示，可覆盖或 <code>keep</code> 新文件。</p></div>
           <div class="card"><h3>🔐 远端认证</h3><p>非回环监听强制要求认证（Bearer/Basic）；SQL 全参数化，无注入面。</p></div>
           <div class="card"><h3>🖥 跨平台</h3><p>Windows / macOS / Linux；控制台 UTF-8 兼容，防多进程重复绑定端口。</p></div>
@@ -144,7 +144,7 @@ docs-search-web /path/to/your/docs
           </div>
           <div class="card">
             <h3>🔗 Agent 接入指南（MCP）</h3>
-            <p>五家 agent 的 MCP/扩展配置：Cursor、ZCode、Qoder、DSH、pi；工具清单与安全注意。</p>
+            <p>八家 agent 的 MCP/扩展配置：Cursor、ZCode、Qoder、DSH、Cline、OpenCode、Reasonix、pi；工具清单与安全注意。</p>
             <a class="go" href="#" onclick="loadDoc('MCP.md');return false;">阅读 MCP.md →</a>
           </div>
           <div class="card">
