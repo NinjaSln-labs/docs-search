@@ -1,7 +1,7 @@
 # docs-search MCP / Agent 接入指南
 
 > 把本地文档库接到 AI agent 的两条路径:
-> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH 等一切支持 MCP 的 agent;
+> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix 等一切支持 MCP 的 agent;
 > **② pi extension**——pi 无内置 MCP,提供 TS 扩展桥接到同一个 server。
 > 工具逻辑只有一份(Python),所有 agent 共享同一套检索行为。
 
@@ -36,6 +36,9 @@ DOCS_SEARCH_PROXY=http://proxy.corp:8080 docs-search-mcp --url http://192.168.1.
 - 地址可写裸 `ip:port`（自动补 `http://`）；`--url` > `$DOCS_SEARCH_URL`，未配置则为本地模式
 - **认证**（远端服务启用了认证时，二选一）：`--token`（Bearer）或 `--user/--password`（Basic）；
   环境变量回退 `$DOCS_SEARCH_TOKEN` / `$DOCS_SEARCH_USER` / `$DOCS_SEARCH_PASSWORD`；
+  **显式认证参数优先**：配置里显式给了任一认证参数（`--token` 或 `--user/--password`），env 认证回退
+  整体关闭（防本机 env 残留另一路凭据触发“互斥”/串凭据——agent 配置显式 `--token` 时
+  `$DOCS_SEARCH_USER`/`$DOCS_SEARCH_PASSWORD` 常驻不再影响）；
   凭据缺失/错误时探活直接失败并报错退出（MCP 客户端会展示），不静默挂起
 - **连接代理**（连接层，默认跟随环境/系统代理 `http_proxy`/`all_proxy` 等，`no_proxy` 中的主机仍直连）：
   `--proxy http://proxy.corp:8080` 显式指定 HTTP 代理（裸 `host:port` 自动补 `http://`，支持
@@ -202,6 +205,83 @@ dsh --profile headless --patch /tmp/ds.cordis.yml '调用 mcp__docs-search__docs
 - 插件 add 后仅进 node_modules,`--dump-config` 能看到 insert 行才算激活
 - 支持字段:`toolCallTimeoutMs`(默认 60s)、`failOnStartupError`、`reconnect.*`,详见上游 config-catalog
 - 参考上游指南:<https://deepseek-harness.github.io/deepseek-harness/>(packages/mcp + user guide mcp-memory)
+
+## Cline(CLI)
+
+**agent 级已实测通过**（Cline CLI 3.0.61，非交互直调 docs_search 搜「远程模式」1 命中；
+`cline config mcp` 识别 docs-search [stdio]）。
+
+- **配置路径**：`~/.cline/data/settings/cline_mcp_settings.json`（CLI 实际读取路径；官方文档早先写的
+  `~/.cline/mcp.json` 是错的，见 cline#11671）；IDE 侧同文件或 `%USERPROFILE%\.cline\cline_mcp_settings.json`
+- **格式**：标准 `mcpServers`（与 Cursor 同构）
+
+```json
+{
+  "mcpServers": {
+    "docs-search": {
+      "command": "docs-search-mcp",
+      "args": ["--url", "https://example.com:8765"],
+      "env": {}
+    }
+  }
+}
+```
+
+- 本地模式把 `args` 改为 `["--dir", "D:/path/to/your/docs"]`；命令找不到时改绝对路径
+- CLI 用法：`cline "检索 docs 库中 MCP 配置"`（act 模式默认 auto-approve）；`cline -p` 为 plan 模式；
+  `--json` 结构化输出；验证服务器用 `cline config mcp`（**注意 `cline mcp list` 不存在**——
+  `cline mcp install|uninstall` 是需 TTY 的向导，非交互场景用 `config mcp`）
+
+## OpenCode(V2)
+
+**agent 级已实测通过**（opencode 1.18.30，`opencode run` 直调 docs_search 搜「MCP」8 命中；
+`opencode mcp list` 显示 connected）。
+
+- **配置路径**：全局 `~/.config/opencode/opencode.jsonc`（项目级放仓库根 `opencode.jsonc`，优先级更高）
+- **格式**：V2 把服务器放 `mcp.servers` 下（**不是**直接把名字放 `mcp` 下）；`type: "local"` = stdio
+  启动命令，`command` 是数组（可执行文件 + 参数）；无 `enabled` 字段（默认连接，`disabled: true` 才关）
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "docs-search": {
+        "type": "local",
+        "command": ["docs-search-mcp", "--url", "https://example.com:8765"],
+        "environment": {}
+      }
+    }
+  }
+}
+```
+
+- 本地模式把 `command` 改为 `["docs-search-mcp", "--dir", "D:/path/to/your/docs"]`
+- 远端服务启用认证时凭据放 `environment`（如 `"environment": { "DOCS_SEARCH_TOKEN": "{env:DOCS_SEARCH_TOKEN}" }`）
+  或依赖进程环境变量回退；`environment` 只增不改（继承的冲突变量无法删除）
+- 验证：`opencode mcp list` 看 connected 状态
+
+## Reasonix
+
+**agent 级已实测通过**（reasonix v1.38.3，`-p` 非交互直调 docs_search 搜「MCP 配置」8 命中；
+添加时返回 “ready with 5 tools”）。
+
+- 自带 MCP 管理子命令，无需手写配置（全局条目写入 `reasonix.toml` 或
+  Windows `%APPDATA%\reasonix\config.toml`；项目条目写仓库根 `reasonix.toml`）：
+
+```bash
+# stdio（argv 无 shell，命令与参数分开）
+reasonix mcp add docs-search -- docs-search-mcp --dir D:/path/to/your/docs
+# 远程模式（连已运行/自定义服务）
+reasonix mcp add docs-search -- docs-search-mcp --url https://example.com:8765
+# 验证 / 管理
+reasonix mcp list        # 应显示 docs-search (stdio)
+reasonix mcp remove docs-search
+```
+
+- 认证凭据不在命令里写（机密），靠环境变量回退 `$DOCS_SEARCH_TOKEN` 等——与 Cline/OpenCode 的
+  `env` 字段不同，reasonix 的 stdio argv 形式**无法注入环境变量**，凭据一律走进程环境
+- 非交互调用：`reasonix -p [--permission-mode MODE] "…"`；`reasonix run "…"` 分步执行
 
 ## pi(@earendil-works/pi-coding-agent)
 

@@ -9,7 +9,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **Zero dependencies** — Python stdlib only (3.10+), no pip install required to run
 - **Fast** — SQLite index, retrieval < 50ms
 - **Auto re-index** — detects file changes before every search
-- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH, plug-and-play) + pi extension; local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth)
+- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix, plug-and-play) + pi extension; local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth)
 - **Remote deployment** — `docs-search-web --host 0.0.0.0 --token <T>` as an independent remote service (non-loopback listening requires auth); backend and agents can be deployed separately
 - **Web UI** — built-in search page with drag-and-drop `.md` upload
 - **Multi-corpus isolation** — each docs directory gets its own index; every operation may carry a `workspace` to switch to a self-contained library (MCP/API/CLI alike); search/list support `workspace=all` cross-library aggregation
@@ -90,8 +90,9 @@ qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 ```
 
 Exposes 5 tools: `docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`.
-For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row) and the pi extension,
-see the [Agent Integration Guide](docs/MCP.md).
+For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row), Cline
+(`~/.cline/data/settings/cline_mcp_settings.json`), OpenCode (`mcp.servers`), Reasonix
+(`reasonix mcp add`) and the pi extension, see the [Agent Integration Guide](docs/MCP.md).
 
 When a docs-search service is already running (local or remote machine, same `/api/*` interface),
 the MCP server can proxy to it instead of reading a local directory:

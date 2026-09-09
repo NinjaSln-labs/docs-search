@@ -6,6 +6,21 @@
 
 ### Fixed
 
+- **MCP 远程模式认证：显式参数优先于 env 回退**（agent 部署场景）：配置显式给了任一认证参数
+  （`--token` 或 `--user/--password`）时，`DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER` /
+  `DOCS_SEARCH_PASSWORD` 环境变量回退整体关闭——此前本机 env 残留另一路凭据（如
+  `DOCS_SEARCH_USER` 常驻）会让显式 `--token` 的 agent 配置触发“互斥”报错启动失败。
+  无显式认证参数时 env 回退与互斥保护不变。
+
+### Added
+
+- **Agent 适配新增 Cline / OpenCode / Reasonix 三家**（docs/MCP.md）：
+  Cline CLI 3.x（`~/.cline/data/settings/cline_mcp_settings.json`，含 cline#11671 配置路径勘误）、
+  OpenCode V2（`mcp.servers` local 命令数组）、Reasonix（`reasonix mcp add` 自带管理命令）；
+  三家 MCP 服务器均已在本机实测连接（远程模式连认证服务，Bearer 经 env 回退）。
+
+### Fixed
+
 - **pi 扩展 `docs_info` mode 参数 schema 对弱模型服从性差**（[#1](https://github.com/NinjaSln-labs/docs-search/issues/1)）：
   TypeBox `Type.Union([Type.Literal(...)])` 序列化为 `anyOf[{const},{const}]`，弱模型易幻觉枚举外值，
   被客户端校验拒绝后循环空转；改平铺 `Type.String({enum:["list","stats"]})`，与 MCP server 本体

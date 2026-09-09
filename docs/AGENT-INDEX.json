@@ -28,7 +28,7 @@
       "command": "docs-search-mcp",
       "transport": "stdio",
       "protocol": "JSON-RPC 2.0（按行分隔）；protocolVersion 2024-11-05",
-      "guide": "/MCP.md（含 cursor/zcode/qorder/dsh/pi 五家配置）",
+      "guide": "/MCP.md（含 cursor/zcode/qorder/dsh/cline/opencode/reasonix/pi 八家配置）",
       "tools": {
         "docs_search": { "args": { "query": "必填，多关键词空格分隔 AND", "limit": "默认 8，上限 20", "cat": "可选分类过滤", "workspace": "可选库名；all=跨全部库聚合（结果带来源）" } },
         "docs_read": { "args": { "path": "必填，相对路径", "workspace": "可选（不支持 all）" } },
