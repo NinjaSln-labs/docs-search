@@ -45,14 +45,13 @@ docs-search 的 MCP/扩展配置——检测到谁就装谁，幂等可重跑：
 docs-search-install --dir D:/path/to/your/docs
 # 远程模式（连已运行/自定义服务，认证走环境变量 DOCS_SEARCH_TOKEN 等）：
 docs-search-install --url https://docs.example.com
-# 只预览不写入 / 只装某几家 / 覆盖已有条目：
+# 只装某几家 / 只预览 / 覆盖：
+docs-search-install --dir ./docs --agents pi,cursor
 docs-search-install --dir ./docs --dry-run
-docs-search-install --dir ./docs --agents pi,cursor,opencode
-docs-search-install --dir ./docs --force        # 覆盖前自动备份 .bak
-# 追加 docs-search-mcp 启动参数（可重复；认证建议走环境变量回退，避免明文落盘）：
-docs-search-install --url https://docs.example.com --mcp-arg proxy=direct --mcp-arg proxy-user=u:pass
+docs-search-install --dir ./docs --force
 ```
 
+完整参数（`--mcp-arg` 附加参数等）、支持矩阵与排错见 **[INSTALL.md](INSTALL.md)**；
 各家写入方式与配置格式见 [MCP.md](MCP.md)（九家配置节）；未安装的 agent 自动跳过。
 
 ### 方式 B：零安装直跑

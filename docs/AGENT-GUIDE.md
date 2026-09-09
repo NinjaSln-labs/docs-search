@@ -110,7 +110,7 @@ curl 'http://127.0.0.1:8765/api/list?ws=all'  # 跨全部库枚举（结果带 w
 ```
 
 **自动写入**：不想手改各家配置，用 `docs-search-install`（`--dir`/`--url` + `--agents` 子集 +
-`--mcp-arg` 附加参数，幂等/dry-run），见 [HUMAN-GUIDE.md](HUMAN-GUIDE.md)「一键安装到 AI agent」。
+`--mcp-arg` 附加参数，幂等/dry-run），操作手册见 [INSTALL.md](INSTALL.md)。
 
 ## 5. 错误处理协议
 

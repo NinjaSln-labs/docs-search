@@ -110,6 +110,7 @@
   "documents": [
     { "id": "mcp-guide", "title": "Agent 接入指南（MCP）", "path": "/MCP.md", "url": "https://ninjasln-labs.github.io/docs-search/MCP.md", "audience": "agent" },
     { "id": "human-guide", "title": "人类使用手册", "path": "/HUMAN-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/HUMAN-GUIDE.md", "audience": "human" },
+    { "id": "install-guide", "title": "一键安装器操作手册（docs-search-install）", "path": "/INSTALL.md", "url": "https://ninjasln-labs.github.io/docs-search/INSTALL.md", "audience": "both" },
     { "id": "agent-guide", "title": "Agent 操作手册", "path": "/AGENT-GUIDE.md", "url": "https://ninjasln-labs.github.io/docs-search/AGENT-GUIDE.md", "audience": "agent" },
     { "id": "api", "title": "Web API 参考", "path": "/API.md", "url": "https://ninjasln-labs.github.io/docs-search/API.md", "audience": "both" },
     { "id": "readme", "title": "README（中文）", "url": "https://github.com/NinjaSln-labs/docs-search/blob/main/README.md", "audience": "both" },

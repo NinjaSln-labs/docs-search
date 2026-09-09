@@ -111,6 +111,8 @@ docs-search-install --url https://docs.example.com --agents pi,cursor,opencode  
 docs-search-install --dir ./docs --mcp-arg proxy=direct --dry-run   # 附加 mcp 参数 + 预览不写入
 ```
 
+完整参数/支持矩阵/排错见 [docs/INSTALL.md](docs/INSTALL.md)。
+
 已有 docs-search 服务在运行时（本机或其他机器，接口与 `/api/*` 相同），MCP 可直接连它、不读本地目录：
 
 ```bash

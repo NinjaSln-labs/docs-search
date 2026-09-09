@@ -100,6 +100,8 @@ docs-search-install --dir ./docs --agents pi,cursor         # subset
 docs-search-install --dir ./docs --mcp-arg proxy=direct     # extra mcp args (repeatable)
 docs-search-install --dir ./docs --dry-run                  # preview, no writes
 ```
+
+Full reference (params / support matrix / troubleshooting): [docs/INSTALL.md](docs/INSTALL.md).
 For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row), Cline
 (`~/.cline/data/settings/cline_mcp_settings.json`), OpenCode (`mcp.servers`), Reasonix
 (`reasonix mcp add`), Command Code (`commandcode mcp add`) and the pi extension, see the

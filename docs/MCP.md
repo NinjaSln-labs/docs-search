@@ -17,7 +17,7 @@ docs-search-mcp --dir ./docs   # 手工自检: 无输出挂起即正常(stdio �
 工作空间为**操作级**: 工具调用时传 `workspace` 参数即切到自包含库(不填=默认库),无需启动配置。
 
 > 💡 **一键安装**: 已安装的 agent 想自动写入配置（含 `--agents` 子集 / `--mcp-arg` 附加参数），
-> 用 `docs-search-install`（见 [HUMAN-GUIDE.md](HUMAN-GUIDE.md)「一键安装到 AI agent」节）——
+> 用 `docs-search-install`（操作手册见 [INSTALL.md](INSTALL.md)）——
 > 本页下面的配置就是它写入的目标形态。
 
 ## 远程模式（连接已运行的服务）
