@@ -1,7 +1,7 @@
 # docs-search MCP / Agent 接入指南
 
 > 把本地文档库接到 AI agent 的两条路径:
-> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix 等一切支持 MCP 的 agent;
+> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code 等一切支持 MCP 的 agent;
 > **② pi extension**——pi 无内置 MCP,提供 TS 扩展桥接到同一个 server。
 > 工具逻辑只有一份(Python),所有 agent 共享同一套检索行为。
 
@@ -282,6 +282,37 @@ reasonix mcp remove docs-search
 - 认证凭据不在命令里写（机密），靠环境变量回退 `$DOCS_SEARCH_TOKEN` 等——与 Cline/OpenCode 的
   `env` 字段不同，reasonix 的 stdio argv 形式**无法注入环境变量**，凭据一律走进程环境
 - 非交互调用：`reasonix -p [--permission-mode MODE] "…"`；`reasonix run "…"` 分步执行
+
+## Command Code
+
+**MCP 服务器配置/连接已验证**（Command Code v1.51.3，`mcp list` 显示 docs-search stdio enabled；
+harness 的 system prompt 注入 `mcp__docs-search__docs_search` 工具描述——模型可感知工具存在）。
+
+- **CLI 名**：官方文档写作 `cmd`（npm 包 command-code 注册了 `cmd` / `cmdc` / `command-code` /
+  `commandcode` 四个别名）——**Windows 下 `cmd` 撞系统 cmd.exe，请用 `commandcode` 或 `cmdc`**
+- **配置**：自带 MCP 管理子命令（stdio argv 用 `--` 分隔，选项放服务器名前）：
+
+```bash
+# stdio（本地模式）
+commandcode mcp add --transport stdio docs-search -- docs-search-mcp --dir D:/path/to/your/docs
+# 远程模式（连已运行/自定义服务；认证走环境变量回退，见上）
+commandcode mcp add --transport stdio docs-search -- docs-search-mcp --url https://example.com:8765
+# 验证 / 管理
+commandcode mcp list           # 应显示 docs-search stdio local enabled
+commandcode mcp remove docs-search
+```
+
+- 工具命名：`mcp__docs-search__docs_search`（会话内 `/mcp` 菜单看连接状态与工具数）
+- **headless `-p` 实测限制**（Command Code harness 侧行为，非本 server 问题）：`-p` 非交互 + BYOK
+  模型时，发给模型的请求 tools 参数**不含 MCP 工具**（仅内置工具；harness 异步加载 stdio MCP
+  晚于工具快照，与 Claude Code #74926 同型）——模型只能“看到”工具描述而无法实际调用；
+  `--tools-all` / `--tools-enable` 均不解决（工具未被 withhold，而是未进入快照）。
+  **建议交互模式使用**（`commandcode` 进 TTY 会话，/mcp 确认连接后工具随会话可用）；
+  待 Command Code 修复 harness 快照时序后 headless 即可直调
+- **BYOK 参考**（headless 需 `COMMAND_CODE_API_KEY` 过认证检查）：`~/.commandcode/providers.json`
+  （`providers.<id>` 对象：`api`（openai-completions / anthropic-messages）、`baseURL`、
+  `apiKey`（`$ENV_VAR` 或 `{env:VAR}` 引用，勿写裸密钥）、`models` **对象 map** 键为模型 id）；
+  实测 GLM-5.3 经 tokenrouter 的 anthropic wire 工具调用正常（API 层验证 tool_use 正确返回）
 
 ## pi(@earendil-works/pi-coding-agent)
 

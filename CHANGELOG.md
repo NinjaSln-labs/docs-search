@@ -18,6 +18,9 @@
   Cline CLI 3.x（`~/.cline/data/settings/cline_mcp_settings.json`，含 cline#11671 配置路径勘误）、
   OpenCode V2（`mcp.servers` local 命令数组）、Reasonix（`reasonix mcp add` 自带管理命令）；
   三家 MCP 服务器均已在本机实测连接（远程模式连认证服务，Bearer 经 env 回退）。
+- **Agent 适配新增 Command Code**（docs/MCP.md）：`commandcode mcp add --transport stdio`；
+  配置/连接已验证（harness 注入工具描述）；headless `-p` + BYOK 实测受 harness 异步加载限制
+  （API tools 参数不含 MCP 工具，建议交互模式；上游行为非 server 问题）。
 
 ### Fixed
 

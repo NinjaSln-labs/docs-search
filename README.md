@@ -9,7 +9,7 @@ A zero-dependency local document search engine. Pure Python stdlib, SQLite index
 - **零依赖** — 纯 Python 标准库（3.10+），无需 pip install
 - **快** — SQLite FTS 索引，检索 < 50ms
 - **自动索引** — 搜索前自动检测文件变更并增量重建
-- **AI Agent 对接** — 内置 MCP stdio server（Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix 等即插即用）+ pi 扩展；支持本地模式与远程模式（`--url` 连已运行的服务，可配 Bearer/Basic 认证）
+- **AI Agent 对接** — 内置 MCP stdio server（Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code 等即插即用）+ pi 扩展；支持本地模式与远程模式（`--url` 连已运行的服务，可配 Bearer/Basic 认证）
 - **远端部署** — `docs-search-web --host 0.0.0.0 --token <T>` 独立启动为远端服务（非回环监听强制认证）；后端与 agent 可分离部署
 - **Web UI** — 内置搜索界面 + 拖拽上传 .md 文档
 - **多库隔离** — 不同文档目录各自独立索引，可并存；每次操作可带 `workspace` 动态切自包含库（MCP/API/CLI 一致）
@@ -100,7 +100,8 @@ qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 
 暴露 5 个工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。
 ZCode（Settings → MCP Servers）、DSH（`@deepseek-ai/dsh-mcp-client` 插件行）、Cline（`~/.cline/data/settings/cline_mcp_settings.json`）、
-OpenCode（`mcp.servers`）、Reasonix（`reasonix mcp add`）配置及 pi 扩展安装，见 [Agent 接入指南](docs/MCP.md)。
+OpenCode（`mcp.servers`）、Reasonix（`reasonix mcp add`）、Command Code（`commandcode mcp add`）配置及 pi 扩展安装，
+见 [Agent 接入指南](docs/MCP.md)。
 
 已有 docs-search 服务在运行时（本机或其他机器，接口与 `/api/*` 相同），MCP 可直接连它、不读本地目录：
 

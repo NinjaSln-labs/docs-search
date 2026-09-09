@@ -103,7 +103,7 @@ curl 'http://127.0.0.1:8765/api/list?ws=all'  # 跨全部库枚举（结果带 w
   socks 代理不支持——纯标准库限制，显式报错）
 - pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server（远程模式设 `DOCS_SEARCH_URL`）
 
-八家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：
+九家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：
 
 ```json
 { "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }
