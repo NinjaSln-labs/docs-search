@@ -600,9 +600,14 @@ def main():
 
     url = resolve_service_url(args.url)
     if url:
-        token = args.token or os.environ.get("DOCS_SEARCH_TOKEN")
-        user = args.user or os.environ.get("DOCS_SEARCH_USER")
-        password = args.password or os.environ.get("DOCS_SEARCH_PASSWORD")
+        if args.token or args.user or args.password:
+            # 显式认证参数优先: env 认证回退整体关闭——防本机 env 残留另一路凭据
+            # (如 DOCS_SEARCH_USER/PASSWORD 常驻)与显式 --token 触发互斥/串凭据
+            token, user, password = args.token, args.user, args.password
+        else:
+            token = os.environ.get("DOCS_SEARCH_TOKEN")
+            user = os.environ.get("DOCS_SEARCH_USER")
+            password = os.environ.get("DOCS_SEARCH_PASSWORD")
         proxy = args.proxy or os.environ.get("DOCS_SEARCH_PROXY") or None
         if token and (user or password):
             print("错误: --token 与 --user/--password 互斥，只能启用一种认证方式", file=sys.stderr)

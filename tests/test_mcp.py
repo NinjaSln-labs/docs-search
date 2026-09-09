@@ -22,11 +22,15 @@ SCRIPT = REPO / "scripts" / "docs-search-mcp.py"
 class McpClient:
     """MCP stdio 测试客户端——按行写 JSON-RPC,按行读响应;支持本地(--dir)与远程(--url/--token)"""
 
-    def __init__(self, docs_dir=None, url=None, token=None, proxy=None, env_extra=None):
+    def __init__(self, docs_dir=None, url=None, token=None, user=None, password=None, proxy=None, env_extra=None):
         if url:
             args = ["--url", url]
             if token:
                 args += ["--token", token]
+            if user:
+                args += ["--user", user]
+            if password:
+                args += ["--password", password]
             if proxy is not None:
                 args += ["--proxy", proxy]
         else:
@@ -113,6 +117,21 @@ def web_server_auth(tmp_path):
     (docs / "hello.md").write_text("# Hello\n\nunique token FROBNICATOR\n", encoding="utf-8")
     db = tmp_path / "idx.db"
     srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db, AuthConfig(token="tk-e2e")))
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{port}", docs
+    srv.shutdown()
+
+
+@pytest.fixture
+def web_server_auth_basic(tmp_path):
+    """已运行且启用 Basic 认证的 docs-search 服务——远程模式 + Basic 认证场景"""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "hello.md").write_text("# Hello\n\nunique token FROBNICATOR\n", encoding="utf-8")
+    db = tmp_path / "idx.db"
+    srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db, AuthConfig(username="u-e2e", password="p-e2e")))
     port = srv.server_address[1]
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
@@ -396,6 +415,50 @@ def test_remote_mode_with_auth_roundtrip(tmp_path, web_server_auth):
     err = bad.proc.stderr.read().decode("utf-8")
     assert rc != 0
     assert "认证失败" in err
+
+
+def test_remote_mode_explicit_token_bypasses_env_mutex(tmp_path, web_server_auth):
+    """显式 --token 时 env 残留另一路凭据(DOCS_SEARCH_USER/PASSWORD)不触发互斥——
+    agent 部署场景(用户级 env 常驻 Basic 凭据 + agent 配置显式 Bearer token)"""
+    base, _ = web_server_auth
+    c = McpClient(
+        url=base, token="tk-e2e",
+        env_extra={"DOCS_SEARCH_USER": "leftover", "DOCS_SEARCH_PASSWORD": "leftover"},
+    )
+    try:
+        c.initialize()
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
+        assert "hello.md" in out
+    finally:
+        c.close()
+
+
+def test_remote_mode_explicit_basic_bypasses_env_token(tmp_path, web_server_auth_basic):
+    """显式 --user/--password 时 env 残留 DOCS_SEARCH_TOKEN 不触发互斥，Basic 认证生效"""
+    base, _ = web_server_auth_basic
+    c = McpClient(
+        url=base, user="u-e2e", password="p-e2e",
+        env_extra={"DOCS_SEARCH_TOKEN": "leftover-token"},
+    )
+    try:
+        c.initialize()
+        out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
+        assert "hello.md" in out
+    finally:
+        c.close()
+
+
+def test_remote_mode_env_dual_auth_still_mutex(tmp_path, web_server_auth):
+    """无显式认证且 env 同时含 token + user/password → 仍互斥退出（安全保护保留）"""
+    base, _ = web_server_auth
+    c = McpClient(
+        url=base,
+        env_extra={"DOCS_SEARCH_TOKEN": "tk-e2e", "DOCS_SEARCH_USER": "u", "DOCS_SEARCH_PASSWORD": "p"},
+    )
+    rc = c.proc.wait(timeout=20)
+    err = c.proc.stderr.read().decode("utf-8")
+    assert rc != 0
+    assert "互斥" in err
 
 
 def test_remote_mode_proxy_direct_arg(tmp_path, web_server):
