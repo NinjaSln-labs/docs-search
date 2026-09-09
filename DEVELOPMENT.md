@@ -10,7 +10,7 @@ src/docs_search/
   web.py      # HTTP 服务 + Web UI（含 /api/upload、/api/delete、Bearer/Basic 认证）
 agent 对接（不依赖本地文档目录——远程模式纯 HTTP 代理）:
 src/docs_search/
-  mcp.py      # MCP stdio server（JSON-RPC 2.0，供 cursor/zcode/qorder/dsh 对接，见 docs/MCP.md）
+  mcp.py      # MCP stdio server（JSON-RPC 2.0，供各家 agent 对接，见 docs/MCP.md）
   remote.py   # 远程服务客户端（urllib，MCP 远程模式代理到已运行的 docs-search 服务，含认证）
 integrations/ # 非 MCP 协议的 agent 桥接（pi extension）
 scripts/      # 瘦包装直跑入口（优先用已安装包，回退 src/）
