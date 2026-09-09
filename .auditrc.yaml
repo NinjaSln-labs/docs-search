@@ -1,0 +1,6 @@
+# repo-audit 仓库级豁免（避免「狼来了」效应：已知接受的发现在此声明原因）
+# 格式: waive -> id/reason/since；since 用 YAML 引号包裹避免剥离歧义
+waive:
+  - id: SEC-004
+    reason: "上游工具 bug（NinjaSln-labs/repo-audit#6）：yaml_field fallback 通配展开时同缩进多键只匹配第一个 job——jobs.publish.permissions.id-token 实际定位到 build。本仓 publish.yml 配置正确（PyPA 推荐 job 级最小权限，v1.3.0 经 OIDC 实机发布成功）；待上游修复后移除本豁免"
+    since: "2026-09-10"
