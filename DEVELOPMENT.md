@@ -12,6 +12,7 @@ agent 对接（不依赖本地文档目录——远程模式纯 HTTP 代理）:
 src/docs_search/
   mcp.py      # MCP stdio server（JSON-RPC 2.0，供各家 agent 对接，见 docs/MCP.md）
   remote.py   # 远程服务客户端（urllib，MCP 远程模式代理到已运行的 docs-search 服务，含认证）
+  agent_install.py  # 九家 agent 一键安装器（检测/写入各家 MCP 配置，docs-search-install 入口）
 integrations/ # 非 MCP 协议的 agent 桥接（pi extension）
 scripts/      # 瘦包装直跑入口（优先用已安装包，回退 src/）
 tests/        # pytest：单元 + CLI/MCP E2E（子进程）+ Web API（内存 HTTP）

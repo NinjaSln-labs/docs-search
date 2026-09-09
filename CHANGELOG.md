@@ -14,6 +14,12 @@
 
 ### Added
 
+- **`docs-search-install` 一键安装器**（src/docs_search/agent_install.py，console_script + scripts/ 直跑）：
+  自动检测九家 agent（pi/cursor/cline/opencode/commandcode/zcode/reasonix/qoder/dsh）并写入
+  docs-search MCP/扩展配置——本地模式 `--dir` 或远程模式 `--url`（认证走环境变量回退）；
+  幂等（已存在条目跳过，`--force` 覆盖前备份 `.bak`）、`--dry-run` 预览、`--agents` 子集；
+  写入分三类：JSON 直写（cursor/cline/opencode/commandcode/zcode）、官方 CLI 调用
+  （reasonix/qoder）、文件 patch（dsh insert 行 / pi 扩展 copy）；+16 测试。
 - **Agent 适配新增 Cline / OpenCode / Reasonix 三家**（docs/MCP.md）：
   Cline CLI 3.x（`~/.cline/data/settings/cline_mcp_settings.json`，含 cline#11671 配置路径勘误）、
   OpenCode V2（`mcp.servers` local 命令数组）、Reasonix（`reasonix mcp add` 自带管理命令）；

@@ -33,6 +33,25 @@ pip install docs-search
 | `docs-search` | 命令行：索引 / 搜索 / 上传等 |
 | `docs-search-web` | 启动 Web 界面（含上传接口的 HTTP 服务） |
 | `docs-search-mcp` | MCP stdio server（AI agent 对接，见 [MCP.md](MCP.md)） |
+| `docs-search-install` | 一键把 docs-search 装进已安装的 AI agent（九家，见下） |
+
+### 一键安装到 AI agent
+
+已安装的 agent（pi / cursor / cline / opencode / commandcode / zcode / reasonix / qoder / dsh）可自动写入
+docs-search 的 MCP/扩展配置——检测到谁就装谁，幂等可重跑：
+
+```bash
+# 本地模式（文档目录在本机）：
+docs-search-install --dir D:/path/to/your/docs
+# 远程模式（连已运行/自定义服务，认证走环境变量 DOCS_SEARCH_TOKEN 等）：
+docs-search-install --url https://docs.example.com
+# 只预览不写入 / 只装某几家 / 覆盖已有条目：
+docs-search-install --dir ./docs --dry-run
+docs-search-install --dir ./docs --agents pi,cursor,opencode
+docs-search-install --dir ./docs --force        # 覆盖前自动备份 .bak
+```
+
+各家写入方式与配置格式见 [MCP.md](MCP.md)（九家配置节）；未安装的 agent 自动跳过。
 
 ### 方式 B：零安装直跑
 
