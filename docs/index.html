@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>docs-search 文档</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E📚%3C/text%3E%3C/svg%3E">
   <!-- JSON-LD 结构化数据 — AI Agent 可读 -->
   <script type="application/ld+json">
   {
@@ -36,16 +37,30 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { color: var(--accent-hover); text-decoration: underline; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
     .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
     header.hero { text-align: center; padding: 48px 0 32px; }
     h1.title { font-size: 2.4em; margin-bottom: 8px; }
     .tagline { color: var(--muted); font-size: 1.05em; margin-bottom: 18px; }
-    .badges img { margin: 0 3px; vertical-align: middle; }
+    .badges { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; }
+    .badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: .8em; border: 1px solid var(--border); color: var(--muted); background: var(--card); white-space: nowrap; }
+    .badge b { color: var(--text); font-weight: 600; }
+    .badge.green { border-color: #2ea043; color: #3fb950; }
     .hero-actions { margin-top: 22px; }
-    .btn { display: inline-block; padding: 10px 22px; border-radius: 8px; font-weight: 600; margin: 4px; border: 1px solid var(--border); }
+    .btn { display: inline-block; padding: 11px 23px; border-radius: 8px; font-weight: 600; margin: 4px; border: 1px solid var(--border); }
     .btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
-    .btn.primary:hover { background: #2ea043; text-decoration: none; color: #fff; }
+    .btn.primary:hover { background: #1f7f36; border-color: #3fb950; text-decoration: none; color: #fff; }
     .btn.ghost:hover { border-color: var(--accent); text-decoration: none; }
+    /* 站内全文搜索 */
+    .search-bar { display: flex; gap: 8px; max-width: 620px; margin: 18px auto 0; }
+    .search-bar input[type="search"] { flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font-size: .95em; }
+    .search-bar input[type="search"]::placeholder { color: var(--muted); }
+    #search-results { max-width: 620px; margin: 10px auto 0; text-align: left; font-size: .9em; }
+    #search-results .sr-head { color: var(--muted); margin-bottom: 6px; }
+    #search-results .sr-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; background: var(--card); }
+    #search-results .sr-item a { font-weight: 600; }
+    #search-results .sr-hit { color: var(--muted); font-size: .88em; margin-top: 2px; word-break: break-all; }
+    #search-results .sr-none, #search-results .sr-err { color: var(--muted); }
     section { margin-top: 36px; }
     h2.section-title { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 18px; }
     pre.code { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: .92em; line-height: 1.55; }
@@ -71,33 +86,42 @@
     #viewer ul, #viewer ol { padding-left: 26px; margin: 8px 0; }
     #viewer blockquote { border-left: 3px solid var(--accent); color: var(--muted); padding: 4px 14px; margin: 10px 0; }
     #viewer table { margin: 12px 0; }
+    #viewer .md-body table { display: block; overflow-x: auto; }  /* 窄屏横向滚动 */
     #viewer hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-    .back-btn { margin-bottom: 14px; }
+    .viewer-top { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .viewer-top .doc-crumb { color: var(--muted); font-size: .92em; margin-right: auto; }
+    .viewer-top .doc-crumb b { color: var(--text); }
+    .viewer-top a { flex-shrink: 0; }
   </style>
 </head>
 <body>
-  <div class="container">
+  <main class="container">
     <div id="landing">
       <header class="hero">
         <h1 class="title">📚 docs-search</h1>
         <p class="tagline">零依赖本地文档搜索引擎 — SQLite 索引 · 毫秒级检索 · CLI + Web UI + 文档上传<br>
         Zero-dependency local document search engine — SQLite index, millisecond retrieval.</p>
         <div class="badges">
-          <img alt="PyPI" src="https://img.shields.io/pypi/v/docs-search?label=PyPI&color=blue">
-          <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-blue">
-          <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
-          <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/NinjaSln-labs/docs-search/ci.yml?branch=main&label=CI">
+          <span class="badge green"><b>PyPI</b> v1.3.1</span>
+          <span class="badge"><b>Python</b> 3.10+</span>
+          <span class="badge green"><b>License</b> MIT</span>
+          <span class="badge"><b>CI</b> 4 矩阵全绿</span>
         </div>
         <div class="hero-actions">
           <a class="btn primary" href="https://pypi.org/project/docs-search/">pip install docs-search</a>
           <a class="btn ghost" href="https://github.com/NinjaSln-labs/docs-search">GitHub 仓库</a>
         </div>
+        <div class="search-bar" role="search">
+          <input type="search" id="search-input" placeholder="搜索全部文档内容…" aria-label="搜索全部文档内容">
+          <button class="btn primary" id="search-btn" type="button">搜索</button>
+        </div>
+        <div id="search-results" role="status" aria-live="polite"></div>
       </header>
 
       <div class="agent-note">
         <strong>🤖 AI Agent 入口</strong>：本站提供机器可读索引
         <a href="AGENT-INDEX.json">AGENT-INDEX.json</a>（工具元数据 / API 端点 / 调用协议 / 退出码），
-        以及 <a href="#" onclick="loadDoc('AGENT-GUIDE.md');return false;">AGENT-GUIDE.md</a> 操作手册。抓取 .md 原文请直接用 URL。
+        以及 <a href="AGENT-GUIDE.md" onclick="loadDoc('AGENT-GUIDE.md');return false;">AGENT-GUIDE.md</a> 操作手册。抓取 .md 原文请直接用 URL。
       </div>
 
       <section>
@@ -136,32 +160,32 @@ docs-search-web /path/to/your/docs
           <div class="card">
             <h3>🧑‍💻 人类使用手册</h3>
             <p>安装、CLI 完整参考、Web UI、路径与索引库规则、安全模型、故障排查 FAQ。</p>
-            <a class="go" href="#" onclick="loadDoc('HUMAN-GUIDE.md');return false;">阅读 HUMAN-GUIDE →</a>
+            <a class="go" href="HUMAN-GUIDE.md" onclick="loadDoc('HUMAN-GUIDE.md');return false;">阅读人类使用手册 →</a>
           </div>
           <div class="card">
             <h3>🛠️ 一键安装器</h3>
             <p>docs-search-install：自动把 docs-search 写入已安装 agent 的配置（九家，幂等/备份/dry-run/子集/附加参数）。</p>
-            <a class="go" href="#" onclick="loadDoc('INSTALL.md');return false;">阅读 INSTALL →</a>
+            <a class="go" href="INSTALL.md" onclick="loadDoc('INSTALL.md');return false;">阅读一键安装器 →</a>
           </div>
           <div class="card">
             <h3>🤖 Agent 操作手册</h3>
             <p>机器可读调用协议：API 优先的集成方式、错误处理表、常见任务配方。</p>
-            <a class="go" href="#" onclick="loadDoc('AGENT-GUIDE.md');return false;">阅读 AGENT-GUIDE →</a>
+            <a class="go" href="AGENT-GUIDE.md" onclick="loadDoc('AGENT-GUIDE.md');return false;">阅读 Agent 操作手册 →</a>
           </div>
           <div class="card">
             <h3>🔗 Agent 接入指南（MCP）</h3>
             <p>九家 agent 的 MCP/扩展配置：Cursor、ZCode、Qoder、DSH、Cline、OpenCode、Reasonix、Command Code、pi；工具清单与安全注意。</p>
-            <a class="go" href="#" onclick="loadDoc('MCP.md');return false;">阅读 MCP.md →</a>
+            <a class="go" href="MCP.md" onclick="loadDoc('MCP.md');return false;">阅读 MCP 接入指南 →</a>
           </div>
           <div class="card">
             <h3>🔌 Web API 参考</h3>
             <p>全部 6 个端点：参数、curl 示例、响应结构、错误码（调用方视角）。</p>
-            <a class="go" href="#" onclick="loadDoc('API.md');return false;">阅读 API.md →</a>
+            <a class="go" href="API.md" onclick="loadDoc('API.md');return false;">阅读 API 参考 →</a>
           </div>
           <div class="card">
             <h3>🛠 自定义兼容服务</h3>
             <p>服务端契约：自己实现 docs-search 兼容服务（任意语言）的接口规范 + 验收自检。</p>
-            <a class="go" href="#" onclick="loadDoc('SERVER-CONTRACT.md');return false;">阅读 SERVER-CONTRACT →</a>
+            <a class="go" href="SERVER-CONTRACT.md" onclick="loadDoc('SERVER-CONTRACT.md');return false;">阅读服务端契约 →</a>
           </div>
           <div class="card">
             <h3>🛠 开发与贡献</h3>
@@ -178,22 +202,38 @@ docs-search-web /path/to/your/docs
     </div>
 
     <div id="viewer">
-      <a class="btn ghost back-btn" href="#" onclick="showLanding();return false;">← 返回首页</a>
-      <a class="btn ghost back-btn" id="raw-link" href="#" target="_blank">查看 .md 原文</a>
-      <div class="md-body" id="md-body"></div>
+      <div class="viewer-top">
+        <a class="btn ghost" href="index.html" onclick="showLanding();return false;">← 返回首页</a>
+        <a class="btn ghost" id="raw-link" href="#" target="_blank">查看 .md 原文</a>
+        <span class="doc-crumb" id="doc-crumb">正在阅读：<b id="doc-crumb-name"></b></span>
+      </div>
+      <article class="md-body" id="md-body" role="region" aria-label="文档内容" tabindex="-1"></article>
     </div>
-  </div>
+  </main>
 
 <script>
+// ---- 文档元数据 ----
+var DOC_TITLES = {
+  'HUMAN-GUIDE.md': '人类使用手册',
+  'INSTALL.md': '一键安装器',
+  'AGENT-GUIDE.md': 'Agent 操作手册',
+  'MCP.md': 'MCP 接入指南',
+  'API.md': 'API 参考',
+  'SERVER-CONTRACT.md': '服务端契约'
+};
+
 // ---- 极简 Markdown 渲染器（标题/代码块/表格/列表/引用/链接/行内样式）----
 function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function safeHref(h) { return /^\s*(javascript|data|vbscript):/i.test(h) ? '#' : h; }
 function inline(s) {
   s = escHtml(s);
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, href) =>
-    href.startsWith('http') ? `<a href="${href}" target="_blank">${txt}</a>` : `<a href="${href}">${txt}</a>`);
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, href) => {
+    const h = safeHref(href);
+    return /^(https?:)/.test(h) ? `<a href="${h}" target="_blank" rel="noopener">${txt}</a>` : `<a href="${h}">${txt}</a>`;
+  });
   return s;
 }
 function renderMd(md) {
@@ -241,22 +281,113 @@ function renderMd(md) {
   }
   return out.join('\n');
 }
-// ---- 文档加载 ----
-function loadDoc(name) {
-  fetch(name).then(r => r.ok ? r.text() : Promise.reject(r.status)).then(md => {
-    document.getElementById('md-body').innerHTML = renderMd(md);
-    document.getElementById('raw-link').href = name;
-    document.getElementById('landing').style.display = 'none';
-    document.getElementById('viewer').style.display = 'block';
-    window.scrollTo(0, 0);
-  }).catch(() => { document.getElementById('md-body').innerHTML = '<p>加载失败，可直接访问 <a href="' + name + '">' + name + '</a></p>'; });
+
+// ---- 文档加载（history 集成 + 加载态 + 标题/焦点 + 错误恢复）----
+var currentDoc = null;
+var fetchController = null;
+
+function setLoading(msg) {
+  document.getElementById('md-body').innerHTML = '<p style="color:var(--muted)">' + msg + '</p>';
 }
-function showLanding() {
-  document.getElementById('viewer').style.display = 'none';
-  document.getElementById('landing').style.display = 'block';
+function setError(name, status) {
+  const retry = `<button class="btn ghost" onclick="loadDoc('${name}', false)">重试</button>`;
+  const hint = status === 404 ? '文档不存在（可能已改名/删除）。'
+    : '网络错误或文档站暂不可用。';
+  document.getElementById('md-body').innerHTML =
+    `<p>${hint}可直接访问 <a href="${name}">${name}</a> 原文。 ${retry}</p>`;
+}
+function showViewer(name) {
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('viewer').style.display = 'block';
+  document.getElementById('raw-link').href = name;
+  document.title = 'docs-search · ' + (DOC_TITLES[name] || name);
+  document.getElementById('doc-crumb-name').textContent = DOC_TITLES[name] || name;
+  const body = document.getElementById('md-body');
+  body.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
-if (location.hash && location.hash.startsWith('#doc=')) loadDoc(decodeURIComponent(location.hash.slice(5)));
+function loadDoc(name, pushState) {
+  if (pushState !== false && history.pushState) {
+    history.pushState({ doc: name }, '', '#doc=' + encodeURIComponent(name));
+  }
+  currentDoc = name;
+  setLoading('加载中…');
+  if (fetchController) fetchController.abort();
+  fetchController = new AbortController();
+  const timer = setTimeout(() => fetchController.abort(), 10000);   // 10s 超时
+  fetch(name, { signal: fetchController.signal }).then(r => {
+    if (!r.ok) throw { status: r.status };
+    return r.text();
+  }).then(md => {
+    document.getElementById('md-body').innerHTML = renderMd(md);
+    showViewer(name);
+  }).catch(err => {
+    if (err && err.name === 'AbortError') { setError(name, 0); }
+    else if (err && err.status === 404) { setError(name, 404); }
+    else { setError(name, 0); }
+  }).finally(() => clearTimeout(timer));
+}
+function showLanding() {
+  if (history.pushState) history.pushState({ doc: null }, '', location.pathname);
+  currentDoc = null;
+  document.getElementById('viewer').style.display = 'none';
+  document.getElementById('landing').style.display = 'block';
+  document.title = 'docs-search 文档';
+  window.scrollTo(0, 0);
+}
+window.addEventListener('popstate', e => {
+  const doc = e.state && e.state.doc;
+  if (doc && doc !== currentDoc) { loadDoc(doc, false); }
+  else if (!doc) { showLandingNoPush(); }
+});
+function showLandingNoPush() {
+  currentDoc = null;
+  document.getElementById('viewer').style.display = 'none';
+  document.getElementById('landing').style.display = 'block';
+  document.title = 'docs-search 文档';
+  window.scrollTo(0, 0);
+}
+
+// ---- 站内全文搜索 ----
+var SEARCH_DOCS = Object.keys(DOC_TITLES);
+function doSearch() {
+  const q = document.getElementById('search-input').value.trim().toLowerCase();
+  const box = document.getElementById('search-results');
+  if (!q) { box.innerHTML = ''; return; }
+  box.innerHTML = '<p class="sr-head">搜索中…</p>';
+  Promise.all(SEARCH_DOCS.map(name =>
+    fetch(name).then(r => r.ok ? r.text() : '').catch(() => '')
+  )).then(texts => {
+    const results = [];
+    texts.forEach((txt, idx) => {
+      if (!txt) return;
+      const lines = txt.split('\n');
+      const hits = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes(q)) {
+          hits.push({ line: i + 1, text: lines[i].trim().slice(0, 120) });
+          if (hits.length >= 3) break;
+        }
+      }
+      if (hits.length) results.push({ name: SEARCH_DOCS[idx], title: DOC_TITLES[SEARCH_DOCS[idx]], hits });
+    });
+    if (!results.length) { box.innerHTML = '<p class="sr-none">无匹配结果，换个关键词试试。</p>'; return; }
+    const total = results.reduce((s, r) => s + r.hits.length, 0);
+    box.innerHTML = '<p class="sr-head">找到 ' + results.length + ' 个文档 / ' + total + ' 处匹配：</p>' +
+      results.map(r =>
+        '<div class="sr-item"><a href="' + r.name + '" onclick="loadDoc(\'' + r.name + '\');return false;">' + escHtml(r.title) + '</a>' +
+        r.hits.map(h => '<div class="sr-hit">L' + h.line + '：' + escHtml(h.text) + '</div>').join('') +
+        '</div>'
+      ).join('');
+  }).catch(() => { box.innerHTML = '<p class="sr-err">搜索失败，请稍后重试。</p>'; });
+}
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+// ---- 初始深链接 ----
+if (location.hash && location.hash.startsWith('#doc=')) {
+  loadDoc(decodeURIComponent(location.hash.slice(5)), false);
+}
 </script>
 </body>
 </html>
