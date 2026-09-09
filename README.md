@@ -103,6 +103,14 @@ ZCode（Settings → MCP Servers）、DSH（`@deepseek-ai/dsh-mcp-client` 插件
 OpenCode（`mcp.servers`）、Reasonix（`reasonix mcp add`）、Command Code（`commandcode mcp add`）配置及 pi 扩展安装，
 见 [Agent 接入指南](docs/MCP.md)。
 
+不想逐家手改配置？`docs-search-install` 自动检测已安装的 agent 并写入（幂等，覆盖前备份 `.bak`）：
+
+```bash
+docs-search-install --dir ./docs                # 本地模式（全部检测到的 agent）
+docs-search-install --url https://docs.example.com --agents pi,cursor,opencode   # 远程模式 + 子集
+docs-search-install --dir ./docs --mcp-arg proxy=direct --dry-run   # 附加 mcp 参数 + 预览不写入
+```
+
 已有 docs-search 服务在运行时（本机或其他机器，接口与 `/api/*` 相同），MCP 可直接连它、不读本地目录：
 
 ```bash

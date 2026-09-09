@@ -9,7 +9,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **Zero dependencies** — Python stdlib only (3.10+), no pip install required to run
 - **Fast** — SQLite index, retrieval < 50ms
 - **Auto re-index** — detects file changes before every search
-- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code, plug-and-play) + pi extension; local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth)
+- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code, plug-and-play) + pi extension; local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth); `docs-search-install` writes the config into every installed agent in one shot
 - **Remote deployment** — `docs-search-web --host 0.0.0.0 --token <T>` as an independent remote service (non-loopback listening requires auth); backend and agents can be deployed separately
 - **Web UI** — built-in search page with drag-and-drop `.md` upload
 - **Multi-corpus isolation** — each docs directory gets its own index; every operation may carry a `workspace` to switch to a self-contained library (MCP/API/CLI alike); search/list support `workspace=all` cross-library aggregation
@@ -90,6 +90,16 @@ qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 ```
 
 Exposes 5 tools: `docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`.
+One-shot setup for every installed agent (pi / cursor / cline / opencode / commandcode / zcode /
+reasonix / qoder / dsh), idempotent with dry-run preview:
+
+```bash
+docs-search-install --dir D:/path/to/your/docs               # local mode
+docs-search-install --url https://docs.example.com          # remote mode (auth via env)
+docs-search-install --dir ./docs --agents pi,cursor         # subset
+docs-search-install --dir ./docs --mcp-arg proxy=direct     # extra mcp args (repeatable)
+docs-search-install --dir ./docs --dry-run                  # preview, no writes
+```
 For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row), Cline
 (`~/.cline/data/settings/cline_mcp_settings.json`), OpenCode (`mcp.servers`), Reasonix
 (`reasonix mcp add`), Command Code (`commandcode mcp add`) and the pi extension, see the
