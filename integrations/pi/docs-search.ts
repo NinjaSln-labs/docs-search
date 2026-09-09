@@ -43,7 +43,7 @@ const DeleteParams = Type.Object({
 });
 
 const InfoParams = Type.Object({
-	mode: Type.Optional(Type.Union([Type.Literal("list"), Type.Literal("stats")], { description: "list (default) or stats" })),
+	mode: Type.Optional(Type.String({ enum: ["list", "stats"], description: "list (default) or stats" })),
 	cat: Type.Optional(Type.String({ description: "Category filter (list mode only)" })),
 });
 
