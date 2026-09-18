@@ -12,3 +12,4 @@ src/docs_search.egg-info/
 HANDOFF.md
 HANDOFF-ARCHIVE/
 build/
+.commandcode/
