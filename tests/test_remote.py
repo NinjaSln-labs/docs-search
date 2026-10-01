@@ -83,7 +83,7 @@ class TestRemoteClient:
     def test_upload_delete_roundtrip_with_guards(self, server):
         base, docs = server
         c = RemoteClient(base)
-        r = c.upload("note.md", "# Note\n\nUPLOADED_MARKER\n")
+        r = c.upload("note.md", "# Note\n\nUPLOADED_MARKER\n", "overwrite")
         assert r["ok"] and r["path"] == "uploads/note.md" and r["count"] == 3
         assert (docs / "uploads" / "note.md").exists()
 
@@ -186,9 +186,9 @@ class TestRemoteAuth:
         base, srv = self._auth_server(tmp_path, AuthConfig())
         try:
             c = RemoteClient(base)
-            # 上传到默认库 + workspace 库
-            assert c.upload("f.md", "default-marker\n")["ok"]
-            assert c.upload("f.md", "ws-marker\n", workspace="wx-1")["ok"]
+            # 上传到默认库 + workspace 库（overwrite：连接层瞬断重试幂等，规避 Windows 回环间歇掐断）
+            assert c.upload("f.md", "default-marker\n", "overwrite")["ok"]
+            assert c.upload("f.md", "ws-marker\n", if_exists="overwrite", workspace="wx-1")["ok"]
             # search: 默认找不到 ws,ws 能找到
             assert c.search("ws-marker")["results"] == []
             assert c.search("ws-marker", workspace="wx-1")["results"][0]["path"] == "uploads/f.md"
@@ -206,8 +206,8 @@ class TestRemoteAuth:
         base, srv = self._auth_server(tmp_path, AuthConfig())
         try:
             c = RemoteClient(base)
-            assert c.upload("d.md", "shared-marker-42\n")["ok"]
-            assert c.upload("w.md", "shared-marker-42\n", workspace="wa")["ok"]
+            assert c.upload("d.md", "shared-marker-42\n", "overwrite")["ok"]
+            assert c.upload("w.md", "shared-marker-42\n", if_exists="overwrite", workspace="wa")["ok"]
             r = c.search("shared-marker-42", workspace="all")
             assert r["workspace"] == "all"
             by_ws = {x["ws"]: x["path"] for x in r["results"]}
@@ -281,7 +281,7 @@ class TestProxyRouting:
         c = RemoteClient(base, token="tk-x", proxy=proxy_url)
         assert c.stats()["count"] == 2
         assert c.search("FROBNICATOR")["results"][0]["path"] == "hello.md"
-        assert c.upload("via-proxy.md", "PROXY_MARKER\n")["ok"]
+        assert c.upload("via-proxy.md", "PROXY_MARKER\n", "overwrite")["ok"]
         assert len(seen) >= 3
         assert all(s["line"].startswith(f"GET {base}/api/") or s["line"].startswith(f"POST {base}/api/") for s in seen)
         assert seen[0]["auth"] == "Bearer tk-x"  # 端到端凭据经代理原样透传
