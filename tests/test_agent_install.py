@@ -231,6 +231,25 @@ def test_pi_mcp_cli_installer(fake_home, monkeypatch):
     assert inst.entry_status("local") == "exists"
 
 
+def test_pi_migrates_legacy_extension(fake_home, monkeypatch):
+    """旧扩展安装 → install 先备份并移除扩展，再走 pi mcp add（扩展→MCP 迁移）。"""
+    inst = ai.PiInstaller()
+    ext = fake_home / ".pi" / "agent" / "extensions" / ai.PI_LEGACY_EXT
+    ext.parent.mkdir(parents=True)
+    ext.write_text("// legacy extension\n", encoding="utf-8")
+
+    assert inst.detect() is True  # 仅凭旧扩展即可检测到 pi
+    assert inst.entry_status("local") == "legacy"
+
+    monkeypatch.setattr(ai, "_run",
+                        lambda args, timeout: subprocess.CompletedProcess(
+                            args, 0, stdout="" if "list" in args else "added docs-search", stderr=""))
+    r = inst.install("local", "/docs", force=False)
+    assert not ext.exists()  # 扩展已移除
+    assert ext.with_name(ext.name + ".bak").read_text(encoding="utf-8") == "// legacy extension\n"
+    assert "已卸载旧扩展" in r and "added docs-search" in r
+
+
 # ---------------------------------------------------------------- CLI 调用类
 
 def test_cli_installer_calls_cli(fake_home, monkeypatch):

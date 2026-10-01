@@ -29,6 +29,7 @@ docs-search-install --url https://docs.example.com
 | dsh | `dsh` CLI 或 `~/.dsh/profiles/` | 插件 `dsh plugin add` + patch 行 | `<profile>/cordis.patch.yml` |
 
 > 旧版无内置 MCP 的 pi 可用仓库扩展 `integrations/pi/docs-search.ts`（手动 copy，见 [MCP.md](MCP.md)）。
+> 已用旧扩展安装的 pi：跑安装器即自动迁移——先备份并移除扩展 `~/.pi/agent/extensions/docs-search.ts`，再 `pi mcp add`。
 
 未检测到安装的 agent 自动跳过；`--agents` 可指定子集。
 

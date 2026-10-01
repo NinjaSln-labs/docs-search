@@ -18,6 +18,9 @@
   仍可用仓库扩展（手动 copy，文档保留说明）。
 - **dsh 0.2.0-rc.2 复核**：`dsh plugin add` + `cordis.patch.yml` insert 的条目形状与配置键未变，
   **无需改适配**，仅文档标注（docs/MCP.md DSH 节）。
+- **pi 旧扩展自动迁移**（`agent_install.py` / docs/MCP.md / docs/INSTALL.md）：安装器检测到旧扩展
+  `~/.pi/agent/extensions/docs-search.ts` 时，先备份（`.bak`）并移除该扩展，再执行 `pi mcp add`，
+  避免扩展与 MCP 重复注册工具。`entry_status` 对「仅旧扩展」返回 `legacy`。
 
 ## [1.3.1] — 2026-09-10
 

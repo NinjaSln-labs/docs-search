@@ -364,6 +364,10 @@ pi mcp remove docs-search
 > 复制到 `~/.pi/agent/extensions/docs-search.ts`(全局)或 `.pi/extensions/docs-search.ts`(项目),
 > 以子进程桥接同一 server——目录解析 `DOCS_SEARCH_DIR` > `./docs`,远程 `DOCS_SEARCH_URL`,
 > 要求已 `pip install docs-search`(或 `DOCS_SEARCH_MCP_CMD` 指定启动命令)。
+>
+> **从旧扩展迁移到 MCP**:直接跑 `docs-search-install --agents pi` 即可——安装器检测到旧扩展
+> `~/.pi/agent/extensions/docs-search.ts` 后,先备份(`.bak`)并移除该扩展,再执行 `pi mcp add`
+> (避免扩展与 MCP 重复注册工具)。
 
 ---
 

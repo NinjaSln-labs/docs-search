@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 SERVER_NAME = "docs-search"
+PI_LEGACY_EXT = "docs-search.ts"  # 旧版 pi 扩展安装位：~/.pi/agent/extensions/
 
 # 检测用 CLI 命令（与配置名一致的官方入口；Windows 下 cmd 别名撞系统 cmd.exe，故 Command Code 用 commandcode）
 AGENTS = [
@@ -497,7 +498,8 @@ class DshInstaller(BaseInstaller):
 class PiInstaller(CliInstaller):
     """pi：新版内置 MCP，走官方 `pi mcp add`（写入 ~/.pi/agent/mcp.json）。
 
-    旧版无内置 MCP 的 pi 可改用仓库 integrations/pi/docs-search.ts 扩展（见 docs/MCP.md）。
+    兼容旧版扩展安装：若存在 `~/.pi/agent/extensions/docs-search.ts`，安装时先备份并移除该扩展
+    （避免与 MCP 条目重复注册工具），再执行 `pi mcp add`——即扩展 → MCP 的迁移。
     """
 
     name = "pi"
@@ -506,7 +508,30 @@ class PiInstaller(CliInstaller):
     add_args = ("mcp", "add")
 
     def describe(self) -> str:
-        return "pi：pi mcp add（~/.pi/agent/mcp.json，内置 MCP）"
+        return "pi：pi mcp add（~/.pi/agent/mcp.json，内置 MCP；旧扩展自动迁移）"
+
+    def _legacy_ext(self) -> Path:
+        return home() / ".pi" / "agent" / "extensions" / PI_LEGACY_EXT
+
+    def detect(self) -> bool:
+        return _cli_exists(self.cli) or self._legacy_ext().exists()
+
+    def entry_status(self, mode: str) -> str:
+        status = super().entry_status(mode)
+        if status != "exists" and self._legacy_ext().exists():
+            return "legacy"  # 旧扩展待迁移
+        return status
+
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
+        ext = self._legacy_ext()
+        migrated = ""
+        if ext.exists():
+            bak = ext.with_name(ext.name + ".bak")
+            if not bak.exists():
+                shutil.copy2(ext, bak)
+            ext.unlink()
+            migrated = f"；已卸载旧扩展 {ext}（备份 {bak.name}）"
+        return super().install(mode, value, force, extra_args) + migrated
 
 
 INSTALLERS: dict[str, BaseInstaller] = {c.name: c for c in [
@@ -579,7 +604,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         if args.dry_run:
             status = inst.entry_status(mode)
-            print(f"  {name:<12} [dry-run] 当前条目: {status} → {'覆盖' if args.force and status == 'exists' else '写入' if status == 'absent' else '跳过'}")
+            action = "覆盖" if (args.force and status == "exists") else ("跳过" if status == "exists" else "写入")
+            print(f"  {name:<12} [dry-run] 当前条目: {status} → {action}")
             continue
         try:
             print(f"  {name:<12} {inst.install(mode, value, args.force, extra_args)}")
