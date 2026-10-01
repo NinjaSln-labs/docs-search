@@ -37,6 +37,7 @@
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { color: var(--accent-hover); text-decoration: underline; }
+    a:not(.btn):not(.go):not(.badge) { text-decoration: underline; text-underline-offset: 2px; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
     .container { max-width: 960px; margin: 0 auto; padding: 24px 20px 60px; }
     header.hero { text-align: center; padding: 48px 0 32px; }
@@ -65,7 +66,7 @@
     h2.section-title { font-size: 1.4em; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 18px; }
     pre.code { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-size: .92em; line-height: 1.55; }
     code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    p code, li code, td code { background: rgba(110,118,129,.25); padding: 1px 6px; border-radius: 5px; font-size: .9em; }
+    p code, li code, td code { background: rgba(110,118,129,.25); color: var(--text); padding: 1px 6px; border-radius: 5px; font-size: .9em; }
     pre.code code { background: none; padding: 0; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
@@ -126,7 +127,7 @@
 
       <section>
         <h2 class="section-title">快速开始 / Quick Start</h2>
-<pre class="code"><code># 安装（或从源码：python scripts/docs-search.py）
+<pre class="code" tabindex="0"><code># 安装（或从源码：python scripts/docs-search.py）
 pip install docs-search
 
 # 索引一个文档目录（默认 ./docs，也可用 --dir 指定）
@@ -246,7 +247,7 @@ function renderMd(md) {
       const lang = l.slice(3).trim(); const buf = []; i++;
       while (i < lines.length && !lines[i].startsWith('```')) { buf.push(lines[i]); i++; }
       i++;
-      out.push(`<pre class="code"><code data-lang="${lang}">${escHtml(buf.join('\n'))}</code></pre>`);
+      out.push(`<pre class="code" tabindex="0"><code data-lang="${lang}">${escHtml(buf.join('\n'))}</code></pre>`);
       continue;
     }
     if (/^#{1,4} /.test(l)) {                        // headings
@@ -262,7 +263,7 @@ function renderMd(md) {
       const cells = r => r.split('|').slice(1, -1).map(c => c.trim());
       const head = cells(l); i += 2; const rows = [];
       while (i < lines.length && /^\|/.test(lines[i])) { rows.push(cells(lines[i])); i++; }
-      out.push('<table><thead><tr>' + head.map(h => `<th>${inline(h)}</th>`).join('') + '</tr></thead><tbody>' +
+      out.push('<table tabindex="0"><thead><tr>' + head.map(h => `<th>${inline(h)}</th>`).join('') + '</tr></thead><tbody>' +
         rows.map(r => '<tr>' + head.map((_, k) => `<td>${inline(r[k] || '')}</td>`).join('') + '</tr>').join('') +
         '</tbody></table>');
       continue;

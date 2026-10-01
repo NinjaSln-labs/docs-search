@@ -104,4 +104,21 @@
 修复工作量约 **0.5-1 小时**；不改动任何功能逻辑（纯前端交互/样式/语义）。
 
 ---
-*报告生成：静态分析 + WCAG 对比度计算；自动化 axe-core 扫描未执行（环境无 node 依赖，见 docs-search 仓库零依赖约束——建议后续在 CI 或本地临时环境补一次 axe 扫描验证 m6/m8 等结构项）*
+*报告生成：静态分析 + WCAG 对比度计算。*
+
+## axe-core 补扫（2026-10-01）
+
+**方法**：`@axe-core/playwright` 1.62.1 + chromium（临时环境，不入库）；landing + viewer 两态 × 桌面 1280 / 移动 375；tags `wcag2a,wcag2aa,wcag21a,wcag21aa`。
+
+**首扫发现**（原手工审计未捕获的结构项）：
+- m6/m8 目标项验证通过——landmark / 焦点 / heading / 表单标签均 0 违规。
+- 3 类 serious：① 行内 `code` 对比度 4.2:1（<4.5，卡片 muted 段落下 code 底色压暗）；② 正文链接仅靠颜色区分（WCAG 1.4.1，accent 相对周围文字 2.13:1）；③ 可滚动 `pre.code` / `table` 不可键盘聚焦（2.1.1）。
+
+**修复**（`docs/index.html`）：
+1. `p/li/td code` 显式 `color: var(--text)`——对比度 4.2 → ~12:1。
+2. 正文链接加下划线（`a:not(.btn):not(.go):not(.badge)`）——满足 1.4.1 非颜色区分。
+3. 渲染的 `<pre class="code">` 与 `<table>` 加 `tabindex="0"`——可滚动区可键盘聚焦。
+
+**复扫**：两态 × 两视口 **0 违规**；余 1 条 `incomplete`（`display:block` 表格内 `td code` 背景 axe 无法判定，手动计 ~12:1，非违规）。
+
+**复现**：临时环境 `npm i playwright@1.62.1 @axe-core/playwright`，本地静态服务后对 landing/viewer 跑 `AxeBuilder.withTags([...]).analyze()`（零依赖仓库不引入 node 依赖）。
