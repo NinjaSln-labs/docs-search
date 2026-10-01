@@ -14,3 +14,8 @@ HANDOFF-ARCHIVE/
 build/
 .commandcode/
 .skill-fit/
+.handoff/
+
+# Orca ADE（本机配置，不入仓）
+orca.yaml
+.worktreeinclude

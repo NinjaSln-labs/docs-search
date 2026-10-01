@@ -1,4 +1,0 @@
-file:pyproject.toml
-file:requirements.lock
-cmd:python3 --version
-cmd:.venv/bin/ruff --version
