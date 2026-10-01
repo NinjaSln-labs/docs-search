@@ -1,4 +1,10 @@
 #!/bin/sh
 # docs-search pre-commit 钩子 — 验证链单源（scripts/verify.py，与 CI 同源）
 # 启用: git config core.hooksPath .githooks
-exec python scripts/verify.py
+# 优先用 .venv 解释器，找不到退回 PATH python
+if [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="python"
+fi
+exec $PY scripts/verify.py
