@@ -1,13 +1,16 @@
-"""九家 agent 一键安装 docs-search MCP/扩展配置（零依赖，Python 标准库）。
+"""十家 agent 一键安装 docs-search MCP 配置（零依赖，Python 标准库）。
 
 设计：
 - 每家一个适配器（detect 检测是否已安装 / install 幂等写入配置）
 - 写入方式分三类：
-  JSON 直写（cursor/cline/opencode/commandcode/zcode——mcpServers 或 mcp.servers 映射合并）
-  CLI 调用（reasonix/qoder——官方 CLI 管理 MCP，配置格式交给官方）
-  文件 patch（dsh——cordis.patch.yml insert 行追加；pi——扩展文件 copy）
+  JSON 直写（cursor/cline/opencode/commandcode/zcode/mcode——mcpServers 或 mcp.servers 映射合并）
+  CLI 调用（reasonix/qoder/pi——官方 CLI 管理 MCP，配置格式交给官方）
+  文件 patch（dsh——cordis.patch.yml insert 行追加）
 - 幂等：目标条目已存在时跳过（--force 覆盖）；覆盖前备份原文件（<file>.bak）
 - 安全：不触碰无关配置段；JSON 解析失败（如 opencode.jsonc 含注释）跳过该家并提示
+
+说明：pi 新版内置 MCP，改走 `pi mcp add`（~/.pi/agent/mcp.json）；旧版无 MCP 的 pi 可改用
+仓库 integrations/pi/docs-search.ts 扩展（见 docs/MCP.md）。
 
 模式：
 - 本地（--dir <文档目录>）：command=docs-search-mcp, args=[--dir, <dir>]
@@ -26,7 +29,6 @@ import sys
 from pathlib import Path
 
 SERVER_NAME = "docs-search"
-EXT_TS_NAME = "docs-search.ts"
 
 # 检测用 CLI 命令（与配置名一致的官方入口；Windows 下 cmd 别名撞系统 cmd.exe，故 Command Code 用 commandcode）
 AGENTS = [
@@ -34,6 +36,7 @@ AGENTS = [
     "cursor",
     "cline",
     "opencode",
+    "mcode",
     "commandcode",
     "zcode",
     "reasonix",
@@ -42,10 +45,11 @@ AGENTS = [
 ]
 
 AGENT_NAMES_ZH = {
-    "pi": "pi（扩展桥接）",
+    "pi": "pi（内置 MCP）",
     "cursor": "Cursor",
     "cline": "Cline",
     "opencode": "OpenCode",
+    "mcode": "MiniMax Code（mcode）",
     "commandcode": "Command Code",
     "zcode": "ZCode",
     "reasonix": "Reasonix",
@@ -302,6 +306,45 @@ class ZCodeInstaller(JsonMapInstaller):
         return f"已写入 {p}（{'覆盖' if force else '新增'} {SERVER_NAME}）"
 
 
+class McodeInstaller(JsonMapInstaller):
+    """MiniMax Code（mcode）：~/.minimax/mcp.json 的 mcpServers 映射（stdio 条目含 type/enabled）。"""
+
+    name = "mcode"
+
+    @property
+    def config_path(self) -> Path:
+        return home() / ".minimax" / "mcp.json"
+
+    def describe(self) -> str:
+        return "MiniMax Code：~/.minimax/mcp.json（mcpServers，stdio）"
+
+    def detect(self) -> bool:
+        return _cli_exists("mcode") or self.config_path.parent.exists()
+
+    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
+        p = self.config_path
+        if p.exists():
+            try:
+                data = _json_read(p)
+            except ValueError as e:
+                return f"跳过：{e}"
+        else:
+            data = {}
+        servers = data.setdefault(self.server_key, {})
+        if SERVER_NAME in servers and not force:
+            return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
+        cmd = build_command(mode, value, extra_args)
+        servers[SERVER_NAME] = {
+            "type": "stdio",
+            "command": cmd[0],
+            "args": cmd[1:],
+            "env": {},
+            "enabled": True,
+        }
+        _json_write(p, data)
+        return f"已写入 {p}（{'覆盖' if force else '新增'} {SERVER_NAME}）"
+
+
 # ---------------------------------------------------------------- CLI 调用类
 
 class CliInstaller(BaseInstaller):
@@ -451,60 +494,25 @@ class DshInstaller(BaseInstaller):
         return "；".join(results)
 
 
-class PiInstaller(BaseInstaller):
-    """pi：copy 仓库 extensions/pi/docs-search.ts 到用户扩展目录。
+class PiInstaller(CliInstaller):
+    """pi：新版内置 MCP，走官方 `pi mcp add`（写入 ~/.pi/agent/mcp.json）。
 
-    依赖仓库场景（integrations/pi/docs-search.ts 存在）；pip 安装无仓库文件时跳过并提示按文档手动。
+    旧版无内置 MCP 的 pi 可改用仓库 integrations/pi/docs-search.ts 扩展（见 docs/MCP.md）。
     """
 
     name = "pi"
-    kind = "copy"
+    cli = "pi"
+    list_args = ("mcp", "list")
+    add_args = ("mcp", "add")
 
     def describe(self) -> str:
-        return "pi：扩展文件 copy（~/.pi/agent/extensions/）"
-
-    def _repo_ext(self) -> Path | None:
-        # 优先 cwd（仓库根跑）；再向上找仓库
-        cands = [
-            Path.cwd() / "integrations" / "pi" / EXT_TS_NAME,
-            Path(__file__).resolve().parents[2] / "integrations" / "pi" / EXT_TS_NAME,
-        ]
-        for c in cands:
-            if c.is_file():
-                return c
-        return None
-
-    def detect(self) -> bool:
-        return home().joinpath(".pi", "agent", "extensions").is_dir() or self._repo_ext() is not None
-
-    def entry_status(self, mode: str) -> str:
-        dst = home() / ".pi" / "agent" / "extensions" / EXT_TS_NAME
-        if not dst.exists():
-            return "absent"
-        src = self._repo_ext()
-        if src and src.read_bytes() == dst.read_bytes():
-            return "exists"
-        return "exists_different"  # 已安装但内容与仓库不同（可能是自定义/旧版）
-
-    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
-        src = self._repo_ext()
-        if src is None:
-            return "跳过：未找到仓库 integrations/pi/docs-search.ts（pip 安装场景请按 docs/MCP.md 手动 cp）"
-        dst_dir = home() / ".pi" / "agent" / "extensions"
-        status = self.entry_status(mode)
-        if status == "exists" and not force:
-            return "已同步（内容一致，--force 重新覆盖）"
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        dst = dst_dir / EXT_TS_NAME
-        if dst.exists() and not dst.with_name(dst.name + ".bak").exists():
-            shutil.copy2(dst, dst.with_name(dst.name + ".bak"))
-        shutil.copy2(src, dst)
-        return f"已写入 {dst}（{'覆盖' if force or status == 'exists_different' else '新增'}）"
+        return "pi：pi mcp add（~/.pi/agent/mcp.json，内置 MCP）"
 
 
 INSTALLERS: dict[str, BaseInstaller] = {c.name: c for c in [
     PiInstaller(), CursorInstaller(), ClineInstaller(), OpenCodeInstaller(),
-    CommandCodeInstaller(), ZCodeInstaller(), ReasonixInstaller(), QoderInstaller(), DshInstaller(),
+    McodeInstaller(), CommandCodeInstaller(), ZCodeInstaller(), ReasonixInstaller(),
+    QoderInstaller(), DshInstaller(),
 ]}
 
 
@@ -515,7 +523,7 @@ def detect_all() -> dict[str, bool]:
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="docs-search-install",
-        description="九家 agent 一键安装 docs-search MCP/扩展配置（幂等，覆盖前备份 .bak）",
+        description="十家 agent 一键安装 docs-search MCP 配置（幂等，覆盖前备份 .bak）",
     )
     target = p.add_mutually_exclusive_group()
     target.add_argument("--dir", metavar="PATH", help="本地模式：文档根目录（默认 ./docs）")

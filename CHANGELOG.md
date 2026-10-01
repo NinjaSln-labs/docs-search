@@ -2,6 +2,23 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Added
+
+- **Agent 适配新增 MiniMax Code（mcode）**（`agent_install.py` / docs/MCP.md / docs/INSTALL.md）：
+  JSON 合并写入 `~/.minimax/mcp.json` 的 `mcpServers`（stdio 条目含 `type`/`enabled`，与 Cursor 同形）；
+  `docs-search-install --agents mcode`。支持矩阵由九家扩至**十家**。
+
+### Changed
+
+- **pi 适配改走内置 MCP**（`agent_install.py` / docs/MCP.md / docs/INSTALL.md）：pi 新版内置 MCP 客户端，
+  安装器从「复制仓库 `integrations/pi/docs-search.ts` 扩展」改为官方
+  `pi mcp add docs-search -- docs-search-mcp …`（写入 `~/.pi/agent/mcp.json`）；旧版无 MCP 的 pi
+  仍可用仓库扩展（手动 copy，文档保留说明）。
+- **dsh 0.2.0-rc.2 复核**：`dsh plugin add` + `cordis.patch.yml` insert 的条目形状与配置键未变，
+  **无需改适配**，仅文档标注（docs/MCP.md DSH 节）。
+
 ## [1.3.1] — 2026-09-10
 
 ### Fixed

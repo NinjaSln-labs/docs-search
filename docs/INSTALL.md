@@ -1,6 +1,6 @@
 # docs-search-install — 一键安装器
 
-把 docs-search 的 MCP/扩展配置自动写入**已安装的 AI agent**——不用逐家手改配置文件。
+把 docs-search 的 MCP 配置自动写入**已安装的 AI agent**——不用逐家手改配置文件。
 检测到谁装谁，幂等可重跑，覆盖前自动备份。
 
 ```bash
@@ -11,21 +11,24 @@ docs-search-install --url https://docs.example.com
 ```
 
 > 命令来源：`pip install docs-search`（v1.3.1+）或仓库直跑 `python scripts/docs-search-install.py`。
-> 各 agent 配置格式的权威说明见 [MCP.md](MCP.md)（九家配置节）——本页是安装器的操作手册。
+> 各 agent 配置格式的权威说明见 [MCP.md](MCP.md)（十家配置节）——本页是安装器的操作手册。
 
-## 支持的 agent（九家）
+## 支持的 agent（十家）
 
 | agent | 检测依据 | 写入方式 | 配置位置 |
 |---|---|---|---|
-| pi | `~/.pi/agent/extensions/` | 扩展文件 copy（仓库 `integrations/pi/docs-search.ts`） | `~/.pi/agent/extensions/docs-search.ts` |
+| pi | `pi` CLI（新版内置 MCP） | 官方 CLI `pi mcp add` | `~/.pi/agent/mcp.json` |
 | cursor | `~/.cursor/` | JSON 合并 | `~/.cursor/mcp.json` |
 | cline | `~/.cline/data/settings/` | JSON 合并 | `~/.cline/data/settings/cline_mcp_settings.json` |
 | opencode | `~/.config/opencode/` | JSON 合并（V2 `mcp.servers`） | `~/.config/opencode/opencode.jsonc` |
+| mcode | `~/.minimax/` 或 `mcode` CLI | JSON 合并（`mcpServers`，stdio） | `~/.minimax/mcp.json` |
 | commandcode | `~/.commandcode/` | JSON 合并 | `~/.commandcode/mcp.json` |
 | zcode | `~/.zcode/cli/` | JSON 合并（`mcp.servers` 键） | `~/.zcode/cli/config.json` |
 | reasonix | `reasonix` CLI | 官方 CLI `reasonix mcp add` | 全局 `config.toml` |
 | qoder | `qodercn`/`qoder` CLI | 官方 CLI `qodercn mcp add -s user` | qodercn 管理 |
 | dsh | `dsh` CLI 或 `~/.dsh/profiles/` | 插件 `dsh plugin add` + patch 行 | `<profile>/cordis.patch.yml` |
+
+> 旧版无内置 MCP 的 pi 可用仓库扩展 `integrations/pi/docs-search.ts`（手动 copy，见 [MCP.md](MCP.md)）。
 
 未检测到安装的 agent 自动跳过；`--agents` 可指定子集。
 
@@ -59,7 +62,7 @@ docs-search-install --url https://docs.example.com
 
 - **认证参数不要写进配置**：`--mcp-arg token=xxx` 会明文落盘——用环境变量回退
   （`DOCS_SEARCH_TOKEN` 等），凭据只放进程环境/密钥管理
-- pi 扩展与 MCP server 行为一致，写入 `uploads/` 的内容对文档库进程可读——**勿写密钥/隐私原始数据**
+- 各 agent 的 MCP 客户端与 server 行为一致，写入 `uploads/` 的内容对文档库进程可读——**勿写密钥/隐私原始数据**
 - 只连可信的远程服务；凭据缺失/错误时探活直接失败退出，不静默挂起
 
 ## 示例
@@ -84,7 +87,7 @@ docs-search-install --list
 |---|---|
 | `跳过：未检测到` | 该 agent 未安装或其配置目录不存在——先装 agent 再重跑 |
 | `跳过：JSON 解析失败` | 配置文件含注释/损坏（如 opencode.jsonc）——安装器避免破坏，按 [MCP.md](MCP.md) 手动配置 |
-| `CLI 失败（exit ...）` | reasonix/qoder 官方 CLI 报错（如 MCP server 启动校验失败）——看 stderr 提示 |
+| `CLI 失败（exit ...）` | reasonix/qoder/pi 官方 CLI 报错（如 MCP server 启动校验失败）——看 stderr 提示 |
 | Windows 下 `reasonix` 等找不到 | npm shim（.cmd）需经 `cmd /c` 执行——安装器已内置处理（`_run()`） |
 | 安装后 agent 无工具 | 重启 agent 会话/`/reload`；Command Code headless `-p` 的 harness 限制见 [MCP.md](MCP.md) |
 

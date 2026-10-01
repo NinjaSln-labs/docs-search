@@ -1,8 +1,8 @@
 # docs-search MCP / Agent 接入指南
 
-> 把本地文档库接到 AI agent 的两条路径:
-> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code 等一切支持 MCP 的 agent;
-> **② pi extension**——pi 无内置 MCP,提供 TS 扩展桥接到同一个 server。
+> 把本地文档库接到 AI agent 的路径:
+> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code / MiniMax Code / pi 等一切支持 MCP 的 agent;
+> **② pi 旧版扩展**——仅当 pi 版本无内置 MCP 时,用仓库 `integrations/pi/docs-search.ts` 扩展桥接到同一个 server。
 > 工具逻辑只有一份(Python),所有 agent 共享同一套检索行为。
 
 ## 前置条件
@@ -179,7 +179,8 @@ qodercn mcp list        # 应显示 docs-search ✓ Connected
 ## DSH(DeepSeek Harness)
 
 DSH 内置 MCP 客户端插件 `@deepseek-ai/dsh-mcp-client`(每服务器一条配置,工具以
-`mcp__docs-search__docs_search` 形式出现)。**已实测通过**(dsh 0.1.2-alpha.4,headless profile)。
+`mcp__docs-search__docs_search` 形式出现)。**已实测通过**(dsh 0.1.2-alpha.4;0.2.0-rc.2
+复核 `plugin add` + `cordis.patch.yml` insert 形状与配置键未变,无需改适配;headless profile)。
 
 ```bash
 # ① 把插件装入目标 profile(转发 pnpm,一次性)
@@ -318,27 +319,51 @@ commandcode mcp remove docs-search
   `apiKey`（`$ENV_VAR` 或 `{env:VAR}` 引用，勿写裸密钥）、`models` **对象 map** 键为模型 id）；
   实测 GLM-5.3 经 tokenrouter 的 anthropic wire 工具调用正常（API 层验证 tool_use 正确返回）
 
-## pi(@earendil-works/pi-coding-agent)
+## MiniMax Code(mcode)
 
-**已实测通过**（`pi -e integrations/pi/docs-search.ts`，docs_search/docs_info 双工具验证）。
-pi 无内置 MCP，用本仓库提供的扩展（位于 [integrations/pi/docs-search.ts](../integrations/pi/docs-search.ts)），
-它以子进程方式桥接同一个 MCP server——工具实现与 MCP 客户端完全一致：
+MiniMax Code 的本地 MCP 配置在 `~/.minimax/mcp.json`,顶层 `mcpServers` 映射(与 Cursor 同形,
+stdio 条目含 `type`/`enabled`);也可在 TUI 的 MCP Servers 面板用 JSON 模式追加。CLI 校验:
+`mcode mcp list --human`、`mcode mcp tools docs-search`。
 
-```bash
-# 全局(所有项目)
-cp integrations/pi/docs-search.ts ~/.pi/agent/extensions/docs-search.ts
-# 或项目级(仅当前项目,首次加载需信任)
-cp integrations/pi/docs-search.ts .pi/extensions/docs-search.ts
+```json
+{
+  "mcpServers": {
+    "docs-search": {
+      "type": "stdio",
+      "command": "docs-search-mcp",
+      "args": ["--dir", "/path/to/your/docs"],
+      "enabled": true
+    }
+  }
+}
 ```
 
-文档目录解析:`DOCS_SEARCH_DIR` 环境变量 > `./docs`(pi 启动目录)。
-远程模式: 设 `DOCS_SEARCH_URL`(如 `http://192.168.1.10:8765`)时改连已运行的服务
-(`--url` 启动 MCP server,不读本地目录),适合服务已启动/异机共享文档库的场景;
-远端启用认证时,凭据用 `DOCS_SEARCH_TOKEN`(Bearer)或 `DOCS_SEARCH_USER`+`DOCS_SEARCH_PASSWORD`(Basic)。
-连接代理: `DOCS_SEARCH_PROXY=http://ip:port` 走指定代理,或 `direct`/`none` 强制直连(忽略环境代理);
-未设置时跟随系统/环境代理(`http_proxy` 等)。
-要求已 `pip install docs-search`;或设 `DOCS_SEARCH_MCP_CMD="python <仓库>/scripts/docs-search-mcp.py"` 指定启动命令。
-改完 `/reload` 热加载;工具名:`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。
+远程模式把 `args` 换成 `["--url", "http://host:8765"]`(认证走环境变量回退,见上文「远程模式」节)。
+`docs-search-install --agents mcode` 自动写入此文件。
+
+## pi(@earendil-works/pi-coding-agent)
+
+**已实测通过**（pi 0.99.2 **内置 MCP**）。新版 pi 直接用官方 `pi mcp add` 注册,写入
+`~/.pi/agent/mcp.json`(项目级加 `-l` 写 `.pi/mcp.json`):
+
+```bash
+# 本地模式
+pi mcp add docs-search -- docs-search-mcp --dir /path/to/your/docs
+# 远程模式(连已运行服务)
+pi mcp add docs-search -- docs-search-mcp --url http://192.168.1.10:8765
+# 查看 / 移除
+pi mcp list
+pi mcp remove docs-search
+```
+
+目录解析、远程认证(`DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER`+`DOCS_SEARCH_PASSWORD`)、
+连接代理(`DOCS_SEARCH_PROXY`)与 ① MCP server 的约定一致(见上文「远程模式」节)。
+改完 `/reload` 或新会话生效。
+
+> **旧版 pi(无内置 MCP)**:用仓库扩展 [integrations/pi/docs-search.ts](../integrations/pi/docs-search.ts),
+> 复制到 `~/.pi/agent/extensions/docs-search.ts`(全局)或 `.pi/extensions/docs-search.ts`(项目),
+> 以子进程桥接同一 server——目录解析 `DOCS_SEARCH_DIR` > `./docs`,远程 `DOCS_SEARCH_URL`,
+> 要求已 `pip install docs-search`(或 `DOCS_SEARCH_MCP_CMD` 指定启动命令)。
 
 ---
 

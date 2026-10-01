@@ -1,7 +1,7 @@
 """docs-search-install 一键安装器单元测试。
 
-覆盖：各家配置格式合并（cursor/cline/opencode/commandcode/zcode）、幂等、--force 覆盖、
-备份生成、dry-run 不落盘、CLI 调用适配器（mock）、dsh patch 追加、pi 扩展 copy。
+覆盖：各家配置格式合并（cursor/cline/opencode/commandcode/zcode/mcode）、幂等、--force 覆盖、
+备份生成、dry-run 不落盘、CLI 调用适配器（mock，reasonix/qoder/pi）、dsh patch 追加。
 用 monkeypatch 将 HOME 指向 tmp_path，隔离用户真实配置。
 """
 
@@ -114,6 +114,27 @@ def test_json_missing_file_creates(fake_home):
     assert inst.entry_status("local") == "exists"
 
 
+def test_mcode_mcpservers_stdio(fake_home):
+    """mcode：~/.minimax/mcp.json 的 mcpServers，stdio 条目含 type/enabled。"""
+    inst = ai.McodeInstaller()
+    p = fake_home / ".minimax" / "mcp.json"
+    _write(p, {"mcpServers": {"other": {"type": "stdio", "command": "x"}}})
+
+    assert inst.entry_status("local") == "absent"
+    r = inst.install("local", "/docs", force=False)
+    assert "新增" in r
+    data = json.loads(p.read_text(encoding="utf-8"))
+    s = data["mcpServers"][ai.SERVER_NAME]
+    assert s["type"] == "stdio"
+    assert s["command"] == "docs-search-mcp"
+    assert s["args"] == ["--dir", "/docs"]
+    assert s["enabled"] is True
+    assert data["mcpServers"]["other"]["command"] == "x"  # 无关条目保留
+
+    # 幂等
+    assert "已存在" in inst.install("local", "/docs", force=False)
+
+
 def test_extra_args_appended_to_config(fake_home):
     """--mcp-arg 透传：附加参数追加到各家配置的 args/command。"""
     extra = [("proxy", "direct"), ("token", "T")]
@@ -188,35 +209,26 @@ def test_dsh_no_profile_skips(fake_home):
     assert "跳过" in r
 
 
-def test_pi_copy_from_repo(fake_home, monkeypatch, tmp_path):
-    """pi：从仓库 extensions 复制；内容一致时幂等；不一致视为已存在待覆盖。"""
-    repo_ext = tmp_path / "integrations" / "pi" / ai.EXT_TS_NAME
-    repo_ext.parent.mkdir(parents=True)
-    repo_ext.write_text("export const x = 1;\n", encoding="utf-8")
-    monkeypatch.setattr(ai.PiInstaller, "_repo_ext", lambda self: repo_ext)
-
+def test_pi_mcp_cli_installer(fake_home, monkeypatch):
+    """pi 新版内置 MCP：走 `pi mcp add`（不再是扩展 copy）。"""
     inst = ai.PiInstaller()
-    r1 = inst.install("local", "/docs", force=False)
-    assert "新增" in r1
-    dst = fake_home / ".pi" / "agent" / "extensions" / ai.EXT_TS_NAME
-    assert dst.read_text(encoding="utf-8") == "export const x = 1;\n"
+    monkeypatch.setattr(ai, "_cli_exists", lambda *names: True)
+    runs = []
 
-    # 幂等：内容一致 → 已同步
-    r2 = inst.install("local", "/docs", force=False)
-    assert "已同步" in r2
+    def fake_run(args, timeout):
+        runs.append(args)
+        out = "" if "list" in args else "added docs-search"
+        return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
 
-    # 仓库更新后 → exists_different → 覆盖
-    repo_ext.write_text("export const x = 2;\n", encoding="utf-8")
-    r3 = inst.install("local", "/docs", force=False)
-    assert "覆盖" in r3
-    assert dst.read_text(encoding="utf-8") == "export const x = 2;\n"
-
-
-def test_pi_no_repo_skips(fake_home, monkeypatch):
-    monkeypatch.setattr(ai.PiInstaller, "_repo_ext", lambda self: None)
-    inst = ai.PiInstaller()
+    monkeypatch.setattr(ai, "_run", fake_run)
     r = inst.install("local", "/docs", force=False)
-    assert "跳过" in r
+    assert "added docs-search" in r
+    assert runs[-1] == ["pi", "mcp", "add", "docs-search", "--", "docs-search-mcp", "--dir", "/docs"]
+
+    # entry_status：list 输出含 docs-search → exists
+    monkeypatch.setattr(ai, "_run",
+                        lambda args, timeout: subprocess.CompletedProcess(args, 0, stdout="docs-search", stderr=""))
+    assert inst.entry_status("local") == "exists"
 
 
 # ---------------------------------------------------------------- CLI 调用类
@@ -247,8 +259,7 @@ def test_cli_installer_skips_when_exists(fake_home, monkeypatch):
 
 # ---------------------------------------------------------------- main() 流程
 
-def test_main_list_and_dry_run(fake_home, capsys, monkeypatch):
-    monkeypatch.setattr(ai.PiInstaller, "_repo_ext", lambda self: None)
+def test_main_list_and_dry_run(fake_home, capsys):
     # fake_home 下无任何 agent → 全部未检测
     assert ai.main(["--list"]) == 0
     out = capsys.readouterr().out
@@ -258,8 +269,7 @@ def test_main_list_and_dry_run(fake_home, capsys, monkeypatch):
     assert ai.main(["--dir", "/docs", "--dry-run"]) == 0
 
 
-def test_main_installs_detected_only(fake_home, monkeypatch):
-    monkeypatch.setattr(ai.PiInstaller, "_repo_ext", lambda self: None)
+def test_main_installs_detected_only(fake_home):
     # 模拟只安装了 cursor + cline
     _write(fake_home / ".cursor" / "mcp.json", {"mcpServers": {}})
     _write(fake_home / ".cline" / "data" / "settings" / "cline_mcp_settings.json", {"mcpServers": {}})

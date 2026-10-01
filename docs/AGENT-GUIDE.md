@@ -84,7 +84,7 @@ curl 'http://127.0.0.1:8765/api/list'         # 全部文档（或 ?cat=分类�
 curl 'http://127.0.0.1:8765/api/list?ws=all'  # 跨全部库枚举（结果带 ws 来源）
 ```
 
-### 4.5 MCP 接入（推荐给支持 MCP 的 Agent：Cursor / ZCode / Qoder / DSH）
+### 4.5 MCP 接入（推荐给支持 MCP 的 Agent：Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code / MiniMax Code / pi）
 
 内置零依赖 MCP stdio server（`docs-search-mcp`），工具逻辑与 HTTP API 同源：
 
@@ -101,9 +101,9 @@ curl 'http://127.0.0.1:8765/api/list?ws=all'  # 跨全部库枚举（结果带 w
 - 远程代理：连接层默认跟随环境/系统代理（`http_proxy`/`all_proxy` 等）；`--proxy http://ip:port`
   显式指定 HTTP 代理，`--proxy direct` 忽略环境代理直连（环境变量 `DOCS_SEARCH_PROXY` 回退；
   socks 代理不支持——纯标准库限制，显式报错）
-- pi 无内置 MCP：用仓库内 `integrations/pi/docs-search.ts` 扩展桥接同一 server（远程模式设 `DOCS_SEARCH_URL`）
+- pi 新版内置 MCP：直接 `pi mcp add docs-search -- docs-search-mcp --dir <目录>`（旧版无 MCP 时用仓库 `integrations/pi/docs-search.ts` 扩展桥接，远程模式设 `DOCS_SEARCH_URL`）
 
-九家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：
+十家 agent 的完整配置（含已核实的官方配置格式）见 **[MCP.md](MCP.md)**。Cursor 最小示例：
 
 ```json
 { "mcpServers": { "docs-search": { "command": "docs-search-mcp", "args": ["--dir", "/path/to/docs"] } } }

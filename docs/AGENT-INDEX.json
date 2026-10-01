@@ -21,14 +21,14 @@
     "install": {
       "pypi": "pip install docs-search",
       "from_source": "python scripts/docs-search.py --help（scripts/ 瘦包装，优先用已安装包，回退 src/）",
-      "entry_points": ["docs-search (CLI)", "docs-search-web (HTTP 服务)", "docs-search-mcp (MCP stdio server)", "docs-search-install (一键写入已安装 agent 的 MCP/扩展配置：--dir/--url + --agents 子集 + --mcp-arg 附加参数，幂等/dry-run)"]
+      "entry_points": ["docs-search (CLI)", "docs-search-web (HTTP 服务)", "docs-search-mcp (MCP stdio server)", "docs-search-install (一键写入已安装 agent 的 MCP 配置：--dir/--url + --agents 子集 + --mcp-arg 附加参数，幂等/dry-run)"]
     },
 
     "mcp": {
       "command": "docs-search-mcp",
       "transport": "stdio",
       "protocol": "JSON-RPC 2.0（按行分隔）；protocolVersion 2024-11-05",
-      "guide": "/MCP.md（含 cursor/zcode/qorder/dsh/cline/opencode/reasonix/commandcode/pi 九家配置）",
+      "guide": "/MCP.md（含 cursor/zcode/qorder/dsh/cline/opencode/mcode/commandcode/reasonix/pi 十家配置）",
       "tools": {
         "docs_search": { "args": { "query": "必填，多关键词空格分隔 AND", "limit": "默认 8，上限 20", "cat": "可选分类过滤", "workspace": "可选库名；all=跨全部库聚合（结果带来源）" } },
         "docs_read": { "args": { "path": "必填，相对路径", "workspace": "可选（不支持 all）" } },
