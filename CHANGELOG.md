@@ -2,7 +2,7 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
-## [Unreleased]
+## [1.5.0] — 2026-10-02
 
 ### Changed
 
