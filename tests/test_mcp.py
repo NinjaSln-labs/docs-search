@@ -174,7 +174,7 @@ def test_search_and_read_with_cjk(tmp_path):
     try:
         c.initialize()
         out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
-        assert "hello.md" in out and "1 results" in out
+        assert "hello.md" in out and "1 matches" in out
 
         # CJK 关键词——验证 stdio 显式 UTF-8(Windows GBK 管道坑)
         out = c.text(c.call("docs_search", {"query": "甲乙丙"}))
@@ -298,7 +298,7 @@ def test_remote_mode_full_roundtrip(tmp_path, web_server):
 
         # 检索: 英文 + CJK,cat 过滤走 HTTP(web.py search+cat SQL 回归)
         out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
-        assert "hello.md" in out and "1 results" in out
+        assert "hello.md" in out and "1 matches" in out
         out = c.text(c.call("docs_search", {"query": "甲乙丙"}))
         assert "infra/mcp.md" in out
         out = c.text(c.call("docs_search", {"query": "FROBNICATOR", "cat": "infra"}))
@@ -345,7 +345,7 @@ def test_workspace_all_aggregation(tmp_path):
         c.text(c.call("docs_write", {"filename": "a2.md", "content": "ALL_WS_B\n", "workspace": "wb"}))
         # 聚合搜索: 命中所有库,带 [workspace] 标注
         out = c.text(c.call("docs_search", {"query": "ALL_", "workspace": "all"}))
-        assert "3 results" in out and "workspace=all" in out
+        assert "3 matches" in out and "workspace" in out
         assert "uploads/d.md" in out and "[wa]" in out and "[wb]" in out
         # 聚合 info list/stats
         out = c.text(c.call("docs_info", {"workspace": "all"}))
@@ -405,7 +405,7 @@ def test_remote_mode_with_auth_roundtrip(tmp_path, web_server_auth):
     try:
         c.initialize()
         out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
-        assert "hello.md" in out and "1 results" in out
+        assert "hello.md" in out and "1 matches" in out
     finally:
         c.close()
 
@@ -473,7 +473,7 @@ def test_remote_mode_proxy_direct_arg(tmp_path, web_server):
     try:
         c.initialize()
         out = c.text(c.call("docs_search", {"query": "FROBNICATOR"}))
-        assert "hello.md" in out and "1 results" in out
+        assert "hello.md" in out and "1 matches" in out
     finally:
         c.close()
 

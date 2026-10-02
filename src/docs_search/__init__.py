@@ -30,6 +30,7 @@ from .core import (  # noqa: F401
     save_meta,
     scan_docs,
     scan_meta,
+    search_ex,
     search_lib,
     win_utf8,
 )

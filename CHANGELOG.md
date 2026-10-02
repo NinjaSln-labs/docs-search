@@ -2,6 +2,23 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Changed
+
+- **搜索返回 agent 友好化**（`core.py` 新增 `search_ex`/`render_search_results`，cli/mcp/web 单一实现收敛）：
+  - 摘要从固定文档头 150 字改为**命中点居中 200 字窗口**，关键词带 `【】` 标注，附命中行号；
+    仅标题命中→文档头（line=1）；命中位于前 5KB 之后→尾部信号（`"…"+末 150 字`），不再掩盖命中位置；
+  - 排序从索引扫描序改为**确定性相关序**：标题命中关键词个数降序、路径升序；
+  - 返回带**全量命中总数与截断提示**（`"q" -> N matches (showing M)`），
+    `/api/search` 响应新增 `total` 字段并支持 `limit` 参数（上限 50）；
+  - `workspace=all` 聚合改为按库轮转合并后截 limit（原为各库各取 limit 条全部输出，可见条数收敛）；
+  - 远程 MCP：`limit` 透传服务端截断；旧版服务端（无 `total`）自动降级为客户端切片；
+  - CLI 摘要宽度 120→150 统一；MCP 工具 limit 上限仍为 20（schema 契约）。
+  - 既有差异注明：关键词含 LIKE 通配符 `%`/`_` 时按通配符匹配（非字面），为历史行为。
+- 内部：`search_lib` 改为 `search_ex` 薄包装（返回形状不变，公开 API 兼容）；
+  单库搜索的 4 份重复 LIKE SQL（mcp/web/cli 内联副本）收敛至 `core.search_ex`。
+
 ## [1.4.0] — 2026-10-01
 
 ### Added

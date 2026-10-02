@@ -250,3 +250,119 @@ class TestWorkspace:
         docs, db = core.resolve_paths(tmp_path, db_explicit=str(tmp_path / "x.db"), workspace="proj-a")
         assert db == (tmp_path / "x.db").resolve()
         assert "workspaces" in docs.parts and docs.parts[-2] == "proj-a"
+
+
+# ============================================================
+# search_ex / render_search_results（agent 友好搜索）
+# ============================================================
+@pytest.fixture
+def search_corpus(tmp_path):
+    """多文档语料：title 命中/正文命中/大小写/长文档尾部命中"""
+    docs = tmp_path / "docs"
+    docs.mkdir(parents=True)
+    (docs / "title-hit.md").write_text("# 部署指南\n\n正文无关键词内容。\n", encoding="utf-8")
+    (docs / "body-hit.md").write_text("# 其他\n\n" + " filler\n" * 20 + "这里讲 deployment 部署流程。\n", encoding="utf-8")
+    (docs / "case.md").write_text("# Case\n\nconfig lives in token store\n", encoding="utf-8")
+    (docs / "long.md").write_text("# Long\n\n" + "pad\n" * 4000 + "尾部 deployment 命中\n", encoding="utf-8")
+    return docs
+
+
+@pytest.fixture
+def search_db(search_corpus, tmp_path):
+    db = core.resolve_db_path(search_corpus, str(tmp_path / "idx.db"))
+    core.rebuild_index(search_corpus, db)
+    return db
+
+
+class TestSearchEx:
+    def test_total_counts_all_matches_beyond_limit(self, search_corpus, search_db):
+        data = core.search_ex(search_corpus, search_db, "deployment", limit=1)
+        assert data["total"] == 2  # body-hit + long（title-hit 只命中中文标题不命中 deployment）
+        assert len(data["results"]) == 1  # LIMIT 截断
+
+    def test_empty_result(self, search_corpus, search_db):
+        data = core.search_ex(search_corpus, search_db, "nonexistent-xyz")
+        assert data == {"results": [], "total": 0}
+
+    def test_empty_query_guard(self, search_corpus, search_db):
+        assert core.search_ex(search_corpus, search_db, "   ") == {"results": [], "total": 0}
+
+    def test_ranking_title_hit_first_then_path(self, search_corpus, search_db):
+        """title 命中排在纯正文命中前；同分按 path 升序（确定性）"""
+        (search_corpus / "a-title.md").write_text("# deployment notes\n\n无正文命中\n", encoding="utf-8")
+        (search_corpus / "z-title.md").write_text("# deployment too\n\n无正文命中\n", encoding="utf-8")
+        core.rebuild_index(search_corpus, search_db)
+        data = core.search_ex(search_corpus, search_db, "deployment", limit=10)
+        paths = [r["path"] for r in data["results"]]
+        assert paths[0].endswith("a-title.md") and paths[1].endswith("z-title.md")
+
+    def test_match_centered_snippet_cjk(self, search_corpus, search_db):
+        """摘要以命中点为中心，含 CJK，关键词带【】标注"""
+        data = core.search_ex(search_corpus, search_db, "部署流程", limit=1)
+        r = data["results"][0]
+        assert r["path"] == "body-hit.md"
+        assert "【部署流程】" in r["snippet"] and "这里讲" in r["snippet"]
+        assert r["line"] > 1
+
+    def test_case_insensitive_locate(self, search_corpus, search_db):
+        """query 大写 TOKEN 命中正文小写 token：SQL LIKE/SQL 排序/Python 定位同一语义"""
+        data = core.search_ex(search_corpus, search_db, "TOKEN", limit=1)
+        r = data["results"][0]
+        assert r["path"] == "case.md"
+        assert "【token】" in r["snippet"]  # Python 侧用原文小写标注
+        assert r["line"] == 1
+
+    def test_title_only_hit(self, search_corpus, search_db):
+        """仅标题命中：line=1，摘要为文档头"""
+        data = core.search_ex(search_corpus, search_db, "部署指南", limit=1)
+        r = data["results"][0]
+        assert r["path"] == "title-hit.md"
+        assert r["line"] == 1
+        assert "正文无关键词" in r["snippet"]
+
+    def test_tail_signal_when_hit_beyond_locate_cap(self, search_corpus, search_db):
+        """命中位于 5KB 之后：尾部信号（…"开头），不掩盖命中在后部；line=0"""
+        data = core.search_ex(search_corpus, search_db, "尾部", limit=1)
+        r = data["results"][0]
+        assert r["path"] == "long.md"
+        assert r["snippet"].startswith("…") and "deployment" in r["snippet"]
+        assert r["line"] == 0
+
+    def test_search_lib_wrapper_shape(self, search_corpus, search_db):
+        rows = core.search_lib(search_corpus, search_db, "deployment", limit=5)
+        assert isinstance(rows, list) and {"path", "cat", "title", "snippet", "line"} <= set(rows[0])
+
+
+class TestRoundRobinMerge:
+    def test_interleaves_and_deterministic(self):
+        merged = {"ws-b": ["b1", "b2", "b3"], "ws-a": ["a1", "a2"]}
+        assert core.round_robin_merge(merged) == ["a1", "b1", "a2", "b2", "b3"]
+        # 轮转序 = key 排序：同输入同输出
+        assert core.round_robin_merge({"ws-b": ["b1"], "ws-a": ["a1"]}) == ["a1", "b1"]
+
+    def test_single_lib_does_not_starve_others_after_truncate(self):
+        merged = {"default": list("abcdefghij"), "wa": ["x1", "x2"]}
+        rows = core.round_robin_merge(merged)[:3]
+        assert rows == ["a", "x1", "b"]  # wa 未被 default 挤出
+
+
+class TestRenderSearchResults:
+    def test_format_and_truncation_hint(self):
+        rows = [{"path": "a.md", "title": "A", "snippet": "【kw】 hit", "line": 3, "ws": "wa"}]
+        out = core.render_search_results("kw", rows, 9, 1, ws=True)
+        assert '"kw" -> 9 matches (showing 1) (workspace=all)' in out
+        assert "1. a.md [wa] | A (line 3)" in out
+        assert "【kw】 hit" in out
+        assert "还有 8 条未显示" in out
+
+    def test_tolerates_missing_fields(self):
+        """旧服务端元素无 line/ws/snippet：不 KeyError，行号省略"""
+        rows = [{"path": "a.md", "title": "A"}]
+        out = core.render_search_results("kw", rows, 1, 1)
+        assert "1. a.md | A" in out and "(line" not in out
+        assert "还有" not in out  # total == shown 无截断提示
+
+    def test_line_zero_omitted(self):
+        rows = [{"path": "a.md", "title": "A", "snippet": "…tail", "line": 0}]
+        out = core.render_search_results("kw", rows, 1, 1)
+        assert "(line" not in out

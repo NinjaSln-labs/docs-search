@@ -25,17 +25,18 @@ from pathlib import Path
 from .core import (
     IF_EXISTS_CHOICES,
     MAX_UPLOAD_BYTES,
-    ensure_index,
     get_conn,
     list_lib,
     list_workspaces,
     load_meta,
+    render_search_results,
     resolve_paths,
     resolve_upload_target,
     resolve_workspace,
     resolve_workspace_paths,
+    round_robin_merge,
     sanitize_filename,
-    search_lib,
+    search_ex,
     win_utf8,
 )
 
@@ -82,32 +83,18 @@ def cmd_search(args):
     import time
 
     t0 = time.time()
-    n, rebuilt = ensure_index(docs_dir, db_path)
-    if rebuilt:
-        print(f"[auto] reindexed {n} docs")
-    c = get_conn(db_path)
     q = args.query.strip()
-    keywords = q.split()
-    if not keywords:
+    if not q:
         print('no results for ""')
         return
-    conditions, params = [], []
-    for kw in keywords:
-        conditions.append("(title LIKE ? OR body LIKE ?)")
-        params.extend([f"%{kw}%", f"%{kw}%"])
-    sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)} LIMIT ?"
-    params.append(args.limit)
-    rows = c.execute(sql, params).fetchall()
-    c.close()
+    data = search_ex(docs_dir, db_path, q, None, args.limit)
     dt = (time.time() - t0) * 1000
-    if not rows:
+    if not data["results"]:
         print(f'no results for "{q}"')
         return
-    print(f'"{q}" -> {len(rows)} results ({dt:.0f}ms)\n')
-    for path, cat, title, body in rows:
-        print(f"[{path}] {title}")
-        print(f"  {body[:120].replace(chr(10), ' ')}...")
-        print()
+    print(f"[{dt:.0f}ms]")
+    print(render_search_results(q, data["results"], data["total"], len(data["results"])))
+    print()
 
 
 def _cmd_search_all(args):
@@ -116,20 +103,21 @@ def _cmd_search_all(args):
 
     t0 = time.time()
     q = args.query.strip()
-    hits = []
+    total, merged = 0, {}
     for name, d, p in _all_libs(args):
-        for r in search_lib(d, p, q, limit=args.limit):
-            hits.append((name, r))
+        data = search_ex(d, p, q, None, args.limit)
+        total += data["total"]
+        for r in data["results"]:
+            r["ws"] = name or ""
+            merged.setdefault(name or "", []).append(r)
     dt = (time.time() - t0) * 1000
-    if not hits:
+    if total == 0:
         print(f'no results for "{q}" (workspace=all)')
         return
-    print(f'"{q}" -> {len(hits)} results ({dt:.0f}ms, workspace=all)\n')
-    for name, r in hits:
-        tag = "" if name is None else f" [{name}]"
-        print(f"[{r['path']}{tag}] {r['title']}")
-        print(f"  {r['snippet'][:120]}...")
-        print()
+    rows = round_robin_merge(merged)[: args.limit]
+    print(f"[{dt:.0f}ms, workspace=all]")
+    print(render_search_results(q, rows, total, len(rows), ws=True))
+    print()
 
 
 def cmd_list(args):

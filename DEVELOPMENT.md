@@ -47,6 +47,14 @@ python -m pytest tests/test_mcp.py                      # 只跑 MCP E2E
 - 远程代理（MCP 远程模式）：`--proxy` > `$DOCS_SEARCH_PROXY`（`http://proxy:port` 或 `direct` 直连）；
   未配置则跟随环境/系统代理
 - 上传同名策略 `if_exists`：`error`（默认，提示不写）> `overwrite`（覆盖）> `keep`（`-N` 新文件）
+- 搜索契约（`core.search_ex`，单库唯一实现；cli/mcp/web 全部走它，`search_lib` 为兼容薄包装）：
+  单条 SQL 完成匹配/计数/排序——`COUNT(*) OVER()` 取全量命中 `total`（先于 LIMIT 求值）；
+  排序 = title 命中关键词个数降序（`instr(lower(title),lower(?))`，与 LIKE 同为 ASCII 折叠）+ path 升序；
+  `lower(?)` 必须写进 SQL，Python 侧 `str.lower()` 是全 Unicode 折叠会与 SQLite 错位；
+  摘要 = 命中点居中 200 字窗口（关键词【】标注，定位仅在前 5KB body），仅标题命中→文档头 line=1，
+  命中在 5KB 后→尾部信号 `"…"+末 150 字` line=0；渲染 `render_search_results` 全字段 `.get()` 容错、不截 snippet
+- 聚合（workspace=all）：各库 `search_ex(limit)` → `round_robin_merge` 按库轮转合并（轮转序=库名排序）→ 截 limit；
+  total = Σ各库；limit 上限：web `MAX_SEARCH_LIMIT=50`，MCP 工具 20（schema 契约），CLI 默认 8 无上限钳制
 - **禁止**在源码中出现任何个人/本机绝对路径（测试 `test_no_hardcoded_paths` 会拦截）
 
 ## 设计约束

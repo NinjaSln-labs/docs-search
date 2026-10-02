@@ -99,6 +99,14 @@ qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 ```
 
 暴露 5 个工具：`docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`。
+搜索结果为 agent 友好格式：命中点摘要（关键词【】标注）+ 行号 + 确定性排序（标题命中优先、路径升序）+ 总数/截断提示：
+
+```text
+"部署" -> 3 matches (showing 3)
+1. ops/deploy.md | 部署指南 (line 4)
+   …执行【部署】脚本前先跑测试…
+```
+远程模式需服务端 ≥1.5.0 才有 `total`/服务端截断；旧服务端自动降级（客户端切片、无总数、无标注）。
 ZCode（Settings → MCP Servers）、DSH（`@deepseek-ai/dsh-mcp-client` 插件行）、Cline（`~/.cline/data/settings/cline_mcp_settings.json`）、
 OpenCode（`mcp.servers`）、Reasonix（`reasonix mcp add`）、Command Code（`commandcode mcp add`）、
 MiniMax Code（`~/.minimax/mcp.json`）、pi（`pi mcp add`）配置，

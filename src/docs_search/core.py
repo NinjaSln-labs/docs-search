@@ -244,23 +244,157 @@ def ensure_index(docs_dir, db_path):
 # ============================================================
 # 库级查询助手（单库搜索/枚举；workspace=all 聚合时复用）
 # ============================================================
-def search_lib(docs_dir, db_path, query, cat=None, limit=20):
-    """对单个库执行搜索，返回 [{path, cat, title, snippet}]（snippet 150 字去换行）"""
+SNIPPET_LEN = 150       # 兜底/尾部信号摘要长度
+SNIPPET_WINDOW = 200    # 命中点居中窗口长度
+LOCATE_BODY_CAP = 5120  # 摘要定位仅在前 5KB body 内做（大文档成本控制）
+MAX_SEARCH_LIMIT = 50   # web /api/search 单次返回上限（MCP 工具侧另有 20 上限，见 mcp.py）
+
+
+def round_robin_merge(by_key):
+    """按 key 轮转合并各库结果（key 排序 = 轮转顺序，确定性）：
+    [a1,b1,c1, a2,b2,c2, ...]，避免聚合截断时单库占满、其他库不可见。"""
+    keys = sorted(by_key)
+    out, i = [], 0
+    while True:
+        added = False
+        for k in keys:
+            seq = by_key[k]
+            if i < len(seq):
+                out.append(seq[i])
+                added = True
+        if not added:
+            return out
+        i += 1
+
+
+def _mark_keywords(text, kws):
+    """在窗口内给能精确定位的关键词加【】标注；按 (位置, 长度降序) 去重叠区间，
+    嵌套子串（如 foo/foobar）结果确定。找不到的不标（无害）。"""
+    low = text.lower()
+    if len(low) != len(text):  # lower 变长（如 İ）：放弃大小写不敏感定位，只做精确匹配
+        low = text
+    ranges = []
+    for kw in kws:
+        k = kw.lower() if len(kw.lower()) == len(kw) else kw
+        start = 0
+        while True:
+            i = low.find(k, start)
+            if i < 0:
+                break
+            ranges.append((i, i + len(k)))
+            start = i + max(len(k), 1)
+    if not ranges:
+        return text
+    ranges.sort(key=lambda r: (r[0], -(r[1] - r[0])))
+    merged = []
+    for s, e in ranges:
+        if merged and s < merged[-1][1]:
+            continue
+        merged.append((s, e))
+    out, prev = [], 0
+    for s, e in merged:
+        out += [text[prev:s], "【", text[s:e], "】"]
+        prev = e
+    out.append(text[prev:])
+    return "".join(out)
+
+
+def _locate_snippet(title, body, kws):
+    """定位锚点生成命中点摘要，返回 (snippet, line)。
+
+    - body 前 5KB 内有关键词命中：以最早命中为锚点取居中窗口，窗口内关键词【】标注，
+      line 为锚点行号（1 起）。
+    - 仅 title 命中：line=1，摘要取文档头（命中内容即标题，渲染层已单独展示 title）。
+    - 命中在 5KB 之后（LIKE 全文命中但定位不到）：尾部信号 "…"+末尾 150 字，line=0，
+      不用文档头掩盖"命中在后部"的事实；渲染层对 line=0 省略行号。
+    """
+    head = body[:LOCATE_BODY_CAP]
+    low = head.lower()
+    if len(low) != len(head):  # lower 变长：放弃大小写不敏感定位（退化为精确匹配）
+        low = head
+    pos = -1
+    for kw in kws:
+        k = kw.lower() if len(kw.lower()) == len(kw) else kw
+        i = low.find(k)
+        if i >= 0 and (pos < 0 or i < pos):
+            pos = i
+    if pos >= 0:
+        start = max(0, pos - SNIPPET_WINDOW // 2)
+        end = min(len(head), start + SNIPPET_WINDOW)
+        start = max(0, end - SNIPPET_WINDOW)  # 边界回缩，窗口尽量取满
+        window = _mark_keywords(head[start:end], kws)
+        line = head.count("\n", 0, pos) + 1
+        prefix = "…" if start > 0 else ""
+        suffix = "…" if end < len(body) else ""
+        return (prefix + window + suffix).replace("\n", " "), line
+    if any(kw.lower() in title.lower() for kw in kws):
+        return body[:SNIPPET_LEN].replace("\n", " "), 1
+    return "…" + body[-SNIPPET_LEN:].replace("\n", " "), 0
+
+
+def search_ex(docs_dir, db_path, query, cat=None, limit=20):
+    """单库搜索（agent 友好），返回 {"results": [...], "total": int}。
+
+    单条 SQL 完成匹配/计数/排序，无候选池、无二次 COUNT 查询：
+    - total = LIKE 全量命中数（COUNT(*) OVER() 先于 LIMIT 求值），无命中时为 0；
+    - 排序在 SQL 内：title 命中关键词个数降序（instr/lower 与 LIKE 同为 ASCII 折叠），
+      path 升序兜底确定性；
+    - lower(?) 写进 SQL、关键词原样绑定——Python 侧 str.lower() 是全 Unicode 折叠，
+      会与 SQLite ASCII 折叠错位，不能在 Python 预折。
+    results 元素：path/cat/title/snippet/line（line=0 表示行号不可定位）。
+    """
+    kws = [k for k in query.split() if k]
+    if not kws:  # 防御：调用方已挡空串，core 层兜底避免拼出空 WHERE
+        return {"results": [], "total": 0}
     ensure_index(docs_dir, db_path)
     c = get_conn(db_path)
-    conditions, pargs = [], []
-    for kw in query.split():
+    conditions, where_args = [], []
+    for kw in kws:
         conditions.append("(title LIKE ? OR body LIKE ?)")
-        pargs.extend([f"%{kw}%", f"%{kw}%"])
-    sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)}"
+        where_args.extend([f"%{kw}%", f"%{kw}%"])
+    title_hits = " + ".join(["(instr(lower(title), lower(?)) > 0)"] * len(kws))
+    sql = f"SELECT path, cat, title, body, COUNT(*) OVER() AS total FROM docs WHERE {' AND '.join(conditions)}"
+    qargs = list(where_args)
     if cat:
         sql += " AND cat = ?"
-        pargs.append(cat)
-    sql += " LIMIT ?"
-    pargs.append(limit)
-    rows = c.execute(sql, pargs).fetchall()
+        qargs.append(cat)
+    sql += f" ORDER BY ({title_hits}) DESC, path ASC LIMIT ?"
+    qargs.extend(kws)
+    qargs.append(limit)
+    rows = c.execute(sql, qargs).fetchall()
     c.close()
-    return [{"path": p, "cat": c, "title": t, "snippet": b[:150].replace("\n", " ")} for p, c, t, b in rows]
+    total = rows[0][4] if rows else 0
+    results = []
+    for p, catv, t, b, _total in rows:
+        snippet, line = _locate_snippet(t, b, kws)
+        results.append({"path": p, "cat": catv, "title": t, "snippet": snippet, "line": line})
+    return {"results": results, "total": total}
+
+
+def search_lib(docs_dir, db_path, query, cat=None, limit=20):
+    """兼容包装：等价 search_ex(...)["results"]（[{path, cat, title, snippet, line}]）。
+    公开 API（__init__ 导出）保持原形状；新代码请用 search_ex 获取 total。"""
+    return search_ex(docs_dir, db_path, query, cat, limit)["results"]
+
+
+def render_search_results(query, rows, total, shown, ws=False):
+    """搜索结果统一文本渲染（cli/mcp 共用；web 走 JSON 不用）。
+
+    全字段 .get() 容错——旧版远程服务的 results 元素没有 line 等新字段，不得 KeyError。
+    渲染层不截断 snippet（服务端已 ≤200 字窗口，截断会把【】切成半边）。
+    """
+    lines = [f'"{query}" -> {total} matches (showing {shown})' + (" (workspace=all)" if ws else "")]
+    for i, r in enumerate(rows, 1):
+        tag = f" [{r['ws']}]" if ws and r.get("ws") else ""
+        line = r.get("line") or 0
+        loc = f" (line {line})" if line else ""
+        lines.append(f"{i}. {r.get('path', '')}{tag} | {r.get('title', '')}{loc}")
+        snippet = (r.get("snippet") or "").replace("\n", " ")
+        if snippet:
+            lines.append(f"   {snippet}")
+    if total > shown:
+        lines.append(f"(还有 {total - shown} 条未显示：提高 limit 或加 cat 过滤)")
+    return "\n".join(lines)
 
 
 def list_lib(docs_dir, db_path, cat=None):

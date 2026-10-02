@@ -137,7 +137,7 @@ class RemoteClient:
         else:
             self._opener = urllib.request.build_opener()  # 默认: 与 urlopen 同源,跟随环境/系统代理
 
-    def _request(self, method, path, query=None, body=None):
+    def _request(self, method, path, query=None, body=None, timeout=None, attempts=None):
         url = self.base + path
         if query:
             url += "?" + urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
@@ -146,8 +146,10 @@ class RemoteClient:
             req.add_header("Content-Type", "text/plain; charset=utf-8")
         if self._auth_header:
             req.add_header("Authorization", self._auth_header)
+        timeout = HTTP_TIMEOUT if timeout is None else timeout
+        attempts = HTTP_ATTEMPTS if attempts is None else attempts
         last = None
-        for attempt in range(HTTP_ATTEMPTS):
+        for attempt in range(attempts):
             try:
                 with self._opener.open(req, timeout=HTTP_TIMEOUT) as resp:
                     raw = resp.read().decode("utf-8")
@@ -180,10 +182,17 @@ class RemoteClient:
     def stats(self, workspace=None):
         return self._request("GET", "/api/stats", {"ws": workspace})
 
-    def search(self, q, cat=None, workspace=None):
+    def probe(self):
+        """启动探活：单次请求、短超时——端口被防火墙 DROP（而非 REJECT）时
+        也不至于重试挂满 3×10s，MCP 启动应尽快失败退出。"""
+        return self._request("GET", "/api/stats", timeout=5, attempts=1)
+
+    def search(self, q, cat=None, workspace=None, limit=None):
         query = {"q": q, "ws": workspace}
         if cat:
             query["cat"] = cat
+        if limit is not None:
+            query["limit"] = limit  # 旧版服务端会忽略未知参数，安全降级
         return self._request("GET", "/api/search", query)
 
     def list(self, cat=None, workspace=None):

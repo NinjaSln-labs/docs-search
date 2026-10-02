@@ -47,14 +47,16 @@ from .core import (
     list_workspaces,
     load_meta,
     rebuild_index,
+    render_search_results,
     resolve_db_path,
     resolve_docs_dir,
     resolve_service_url,
     resolve_upload_target,
     resolve_workspace,
     resolve_workspace_paths,
+    round_robin_merge,
     sanitize_filename,
-    search_lib,
+    search_ex,
     win_utf8,
 )
 from .remote import RemoteClient, RemoteError
@@ -62,7 +64,6 @@ from .remote import RemoteClient, RemoteError
 PROTOCOL_VERSION = "2024-11-05"  # MCP protocol revision(与主流 client 兼容的基线)
 SERVER_NAME = "docs-search"
 SERVER_VERSION = __version__  # 随包版本单一事实源
-SNIPPET_LEN = 150
 
 WORKSPACE_FIELD = {
     "type": "string",
@@ -219,29 +220,13 @@ def _search(docs_dir, db_path, args: dict) -> dict:
         limit = 8
     limit = max(1, min(limit, 20))
     cat = str(args.get("cat") or "")
-    ensure_index(docs_dir, db_path)
-    conditions, pargs = [], []
-    for kw in query.split():
-        conditions.append("(title LIKE ? OR body LIKE ?)")
-        pargs.extend([f"%{kw}%", f"%{kw}%"])
-    sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)}"
-    if cat:
-        sql += " AND cat = ?"
-        pargs.append(cat)
-    sql += " LIMIT ?"
-    pargs.append(limit)
-    c = get_conn(db_path)
-    rows = c.execute(sql, pargs).fetchall()
-    c.close()
-    if not rows:
+    data = search_ex(docs_dir, db_path, query, cat or None, limit)
+    if not data["results"]:
         return _ok(
             f'no results for "{query}"'
             f"(库内 {load_meta(db_path).get('count', '?')} 篇;可减少关键词、换词,或 docs_info 核对)"
         )
-    lines = [f'"{query}" -> {len(rows)} results']
-    for path, cat_val, title, body in rows:
-        lines.append(f"- {path} | {title}\n  {body[:SNIPPET_LEN].replace(chr(10), ' ')}")
-    return _ok("\n".join(lines))
+    return _ok(render_search_results(query, data["results"], data["total"], len(data["results"])))
 
 
 def _read(docs_dir, db_path, args: dict) -> dict:
@@ -359,17 +344,19 @@ def _search_all(docs_dir, db_path, args: dict) -> dict:
         limit = 8
     limit = max(1, min(limit, 20))
     cat = str(args.get("cat") or "")
-    results = []
-    for name, d, p in _all_libs(docs_dir, db_path):
-        for r in search_lib(d, p, query, cat or None, limit):
-            results.append((name, r))
-    if not results:
-        return _ok(f'no results for "{query}"（已搜默认库 + {len(_all_libs(docs_dir, db_path)) - 1} 个 workspace）')
-    lines = [f'"{query}" -> {len(results)} results (workspace=all)']
-    for name, r in results:
-        tag = "" if name is None else f" [{name}]"
-        lines.append(f"- {r['path']}{tag} | {r['title']}\n  {r['snippet']}")
-    return _ok("\n".join(lines))
+    libs = _all_libs(docs_dir, db_path)
+    total, merged = 0, {}
+    for name, d, p in libs:
+        data = search_ex(d, p, query, cat or None, limit)
+        total += data["total"]
+        for r in data["results"]:
+            r["ws"] = name or ""
+            merged.setdefault(name or "", []).append(r)
+    if total == 0:
+        return _ok(f'no results for "{query}"（已搜默认库 + {len(libs) - 1} 个 workspace）')
+    # 按库轮转合并（轮转序 = 库名排序）：避免单库占满 limit、其他库不可见
+    rows = round_robin_merge(merged)[:limit]
+    return _ok(render_search_results(query, rows, total, len(rows), ws=True))
 
 
 def _info_all(docs_dir, db_path, args: dict) -> dict:
@@ -418,16 +405,20 @@ def _remote_search(client, args: dict) -> dict:
         limit = 8
     limit = max(1, min(limit, 20))
     cat = str(args.get("cat") or "")
-    data = client.search(query, cat or None, workspace=args.get("workspace"))
+    data = client.search(query, cat or None, workspace=args.get("workspace"), limit=limit)
     if "error" in data:
         return _err(str(data["error"]))
-    results = (data.get("results") or [])[:limit]
+    results = data.get("results") or []
     if not results:
         return _ok(f'no results for "{query}"（可减少关键词、换词,或 docs_info 核对）')
-    lines = [f'"{query}" -> {len(results)} results']
-    for r in results:
-        lines.append(f"- {r.get('path')} | {r.get('title', '')}\n  {(r.get('snippet') or '').replace(chr(10), ' ')}")
-    return _ok("\n".join(lines))
+    total = data.get("total")
+    if total is None:
+        # 旧版服务端无 total 字段：回退客户端切片，header 不报全量数
+        results = results[:limit]
+        total, shown = len(results), len(results)
+    else:
+        shown = len(results)
+    return _ok(render_search_results(query, results, total, shown))
 
 
 def _remote_read(client, args: dict) -> dict:
@@ -621,8 +612,9 @@ def main():
             print(f"错误: {e}", file=sys.stderr)
             sys.exit(1)
         # 启动探活: 服务不可达/未授权立刻报错退出(MCP 客户端会展示并自动重启重试),而非挂起无输出
+        # 用 probe()（单次短超时），不用 stats() 的重试长超时——端口被 DROP 时也能秒级失败
         try:
-            probe = client.stats()
+            probe = client.probe()
         except RemoteError as e:
             print(f"错误: 无法连接 docs-search 服务({url}): {e}", file=sys.stderr)
             print("提示: 先启动 docs-search-web,或确认 --url/$DOCS_SEARCH_URL 指向带 /api/* 的服务", file=sys.stderr)

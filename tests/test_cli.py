@@ -43,7 +43,7 @@ def test_index_search_status_roundtrip(tmp_path):
 
     r = run_cli("search", "FROBNICATOR", "--dir", str(docs), "--db", str(db))
     assert r.returncode == 0, r.stderr
-    assert "1 results" in r.stdout and "hello.md" in r.stdout
+    assert "1 matches" in r.stdout and "hello.md" in r.stdout
 
     r = run_cli("search", "MISSING_TOKEN_XYZ", "--dir", str(docs), "--db", str(db))
     assert "no results" in r.stdout

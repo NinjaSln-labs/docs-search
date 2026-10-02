@@ -238,12 +238,15 @@ def test_pi_migrates_legacy_extension(fake_home, monkeypatch):
     ext.parent.mkdir(parents=True)
     ext.write_text("// legacy extension\n", encoding="utf-8")
 
-    assert inst.detect() is True  # 仅凭旧扩展即可检测到 pi
-    assert inst.entry_status("local") == "legacy"
-
+    # entry_status/install 都会调 pi CLI，必须隔离——装有真实 pi 且已配置
+    # docs-search 的机器上，不隔离会漏读真实 `pi mcp list` 输出
     monkeypatch.setattr(ai, "_run",
                         lambda args, timeout: subprocess.CompletedProcess(
                             args, 0, stdout="" if "list" in args else "added docs-search", stderr=""))
+
+    assert inst.detect() is True  # 仅凭旧扩展即可检测到 pi
+    assert inst.entry_status("local") == "legacy"
+
     r = inst.install("local", "/docs", force=False)
     assert not ext.exists()  # 扩展已移除
     assert ext.with_name(ext.name + ".bak").read_text(encoding="utf-8") == "// legacy extension\n"

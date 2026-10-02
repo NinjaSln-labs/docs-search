@@ -41,6 +41,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .core import (
     IF_EXISTS_CHOICES,
+    MAX_SEARCH_LIMIT,
     MAX_UPLOAD_BYTES,
     ensure_index,
     get_conn,
@@ -52,8 +53,9 @@ from .core import (
     resolve_upload_target,
     resolve_workspace,
     resolve_workspace_paths,
+    round_robin_merge,
     sanitize_filename,
-    search_lib,
+    search_ex,
     win_utf8,
 )
 
@@ -401,23 +403,13 @@ def make_handler(docs_dir, db_path, auth=None):
                 if not q:
                     self._json(200, {"error": "请输入关键词"})
                     return
-                ensure_index(docs_dir, db_path)
-                c = get_conn(db_path)
-                conditions, pargs = [], []
-                for kw in q.split():
-                    conditions.append("(title LIKE ? OR body LIKE ?)")
-                    pargs.extend([f"%{kw}%", f"%{kw}%"])
-                sql = f"SELECT path, cat, title, body FROM docs WHERE {' AND '.join(conditions)}"
-                if cat:
-                    sql += " AND cat = ?"
-                    pargs.append(cat)
-                sql += " LIMIT 20"
-                rows = c.execute(sql, pargs).fetchall()
-                c.close()
-                results = [
-                    {"path": p, "cat": c, "title": t, "snippet": b[:150].replace("\n", " ")} for p, c, t, b in rows
-                ]
-                self._json(200, {"results": results})
+                try:
+                    limit = int(params.get("limit", ["20"])[0])
+                except ValueError:
+                    limit = 20
+                limit = max(1, min(limit, MAX_SEARCH_LIMIT))
+                data = search_ex(docs_dir, db_path, q, cat or None, limit)
+                self._json(200, {"results": data["results"], "total": data["total"]})
 
             elif path == "/api/list":
                 ensure_index(docs_dir, db_path)
@@ -468,12 +460,22 @@ def make_handler(docs_dir, db_path, auth=None):
                     self._json(200, {"error": "请输入关键词"})
                     return
                 cat = params.get("cat", [""])[0]
-                results = []
+                try:
+                    limit = int(params.get("limit", ["20"])[0])
+                except ValueError:
+                    limit = 20
+                limit = max(1, min(limit, MAX_SEARCH_LIMIT))
+                total, merged = 0, {}
                 for name, d, p in self._all_libs():
-                    for r in search_lib(d, p, q, cat or None):
+                    data = search_ex(d, p, q, cat or None, limit)
+                    total += data["total"]
+                    for r in data["results"]:
                         r["ws"] = name or ""
-                        results.append(r)
-                self._json(200, {"results": results, "workspace": "all"})
+                        merged.setdefault(name or "", []).append(r)
+                # 按库轮转合并（轮转序 = 库名排序，确定性）：避免单库占满 limit、
+                # 其他库结果永远不可见的回归；跨库统一截到 limit 条
+                results = round_robin_merge(merged)[:limit]
+                self._json(200, {"results": results, "total": total, "workspace": "all"})
                 return
             if path == "/api/list":
                 cat = params.get("cat", [""])[0]
