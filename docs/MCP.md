@@ -1,7 +1,7 @@
 # docs-search MCP / Agent 接入指南
 
 > 把本地文档库接到 AI agent 的路径:
-> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code / MiniMax Code / pi 等一切支持 MCP 的 agent;
+> **① MCP stdio server**(零依赖,纯 Python 标准库实现)——覆盖 Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code / MiniMax Code / pi / Codex / Claude Code / GitHub Copilot CLI 等一切支持 MCP 的 agent;
 > **② pi 旧版扩展**——仅当 pi 版本无内置 MCP 时,用仓库 `integrations/pi/docs-search.ts` 扩展桥接到同一个 server。
 > 工具逻辑只有一份(Python),所有 agent 共享同一套检索行为。
 
@@ -368,6 +368,70 @@ pi mcp remove docs-search
 > **从旧扩展迁移到 MCP**:直接跑 `docs-search-install --agents pi` 即可——安装器检测到旧扩展
 > `~/.pi/agent/extensions/docs-search.ts` 后,先备份(`.bak`)并移除该扩展,再执行 `pi mcp add`
 > (避免扩展与 MCP 重复注册工具)。
+
+## Codex(OpenAI Codex CLI)
+
+**CLI 配置命令与落盘格式已核实**。官方 CLI 管理 `~/.codex/config.toml`:
+
+```bash
+# 本地模式
+codex mcp add docs-search -- docs-search-mcp --dir /path/to/your/docs
+# 远程模式(连已运行服务;认证走环境变量回退)
+codex mcp add docs-search -- docs-search-mcp --url https://example.com:8765
+# 验证 / 移除
+codex mcp list
+codex mcp remove docs-search
+```
+
+落盘形状(全局 `~/.codex/config.toml`):
+
+```toml
+[mcp_servers.docs-search]
+command = "docs-search-mcp"
+args = ["--dir", "/path/to/your/docs"]
+```
+
+- stdio 形式用 `--` 分隔服务器名与启动命令;远程模式仍是 stdio 包装 `docs-search-mcp --url ...`,
+  不是 Codex 的 `--url` streamable HTTP 条目
+- 凭据不写配置,走 `DOCS_SEARCH_TOKEN` / `DOCS_SEARCH_USER`+`DOCS_SEARCH_PASSWORD` 环境变量回退
+- `docs-search-install --agents codex` 自动写入(`codex mcp add`)
+
+## Claude Code(claude)
+
+**CLI 配置命令与落盘格式已核实**。官方 CLI 管理 user scope(`-s user`):
+
+```bash
+# 本地模式(省略 -s 则写 local scope)
+claude mcp add -s user docs-search -- docs-search-mcp --dir /path/to/your/docs
+# 远程模式
+claude mcp add -s user docs-search -- docs-search-mcp --url https://example.com:8765
+# 验证 / 移除
+claude mcp list
+claude mcp remove -s user docs-search
+```
+
+- user scope 落 `~/.claude.json` 顶层 `mcpServers`;项目级用 `-s project` 写 `<repo>/.mcp.json`
+- `claude mcp list` 会做健康检查,出现 `docs-search - ✔ Connected` 即接通
+- 凭据同上走环境变量回退;`docs-search-install --agents claude` 自动写入
+
+## GitHub Copilot CLI(copilot)
+
+**CLI 配置命令与落盘格式已核实**。官方 CLI 默认写 user scope:
+
+```bash
+# 本地模式
+copilot mcp add docs-search -- docs-search-mcp --dir /path/to/your/docs
+# 远程模式
+copilot mcp add docs-search -- docs-search-mcp --url https://example.com:8765
+# 验证 / 移除
+copilot mcp list
+copilot mcp remove docs-search
+```
+
+- user scope 落 `~/.copilot/mcp-config.json` 的 `mcpServers`(条目含 `type`/`tools`/`command`/`args`);
+  workspace 可用 `.mcp.json` 或 `.github/mcp.json`
+- 远程模式同样是 stdio 包装;凭据走环境变量回退
+- `docs-search-install --agents copilot` 自动写入
 
 ---
 

@@ -11,22 +11,27 @@ docs-search-install --url https://docs.example.com
 ```
 
 > 命令来源：`pip install docs-search`（v1.3.1+）或仓库直跑 `python scripts/docs-search-install.py`。
-> 各 agent 配置格式的权威说明见 [MCP.md](MCP.md)（十家配置节）——本页是安装器的操作手册。
+> 各 agent 配置格式的权威说明见 [MCP.md](MCP.md)（十三家配置节）——本页是安装器的操作手册。
 
-## 支持的 agent（十家）
+## 支持的 agent（十三家）
 
 | agent | 检测依据 | 写入方式 | 配置位置 |
 |---|---|---|---|
 | pi | `pi` CLI（新版内置 MCP） | 官方 CLI `pi mcp add` | `~/.pi/agent/mcp.json` |
 | cursor | `~/.cursor/` | JSON 合并 | `~/.cursor/mcp.json` |
 | cline | `~/.cline/data/settings/` | JSON 合并 | `~/.cline/data/settings/cline_mcp_settings.json` |
-| opencode | `~/.config/opencode/` | JSON 合并（V2 `mcp.servers`） | `~/.config/opencode/opencode.jsonc` |
+| opencode | `opencode` CLI | 官方 CLI `opencode mcp add --global` | `~/.config/opencode/opencode.jsonc` |
 | mcode | `~/.minimax/` 或 `mcode` CLI | JSON 合并（`mcpServers`，stdio） | `~/.minimax/mcp.json` |
 | commandcode | `~/.commandcode/` | JSON 合并 | `~/.commandcode/mcp.json` |
 | zcode | `~/.zcode/cli/` | JSON 合并（`mcp.servers` 键） | `~/.zcode/cli/config.json` |
 | reasonix | `reasonix` CLI | 官方 CLI `reasonix mcp add` | 全局 `config.toml` |
 | qoder | `qodercn`/`qoder` CLI | 官方 CLI `qodercn mcp add -s user` | qodercn 管理 |
 | dsh | `dsh` CLI 或 `~/.dsh/profiles/` | 插件 `dsh plugin add` + patch 行 | `<profile>/cordis.patch.yml` |
+| codex | `codex` CLI | 官方 CLI `codex mcp add` | `~/.codex/config.toml` |
+| claude | `claude` CLI | 官方 CLI `claude mcp add -s user` | `~/.claude.json`（user scope） |
+| copilot | `copilot` CLI | 官方 CLI `copilot mcp add` | `~/.copilot/mcp-config.json` |
+
+> `--agents` 接受别名：`qodercn` → `qoder`，`command-code` → `commandcode`。
 
 > 旧版无内置 MCP 的 pi 可用仓库扩展 `integrations/pi/docs-search.ts`（手动 copy，见 [MCP.md](MCP.md)）。
 > 已用旧扩展安装的 pi：跑安装器即自动迁移——先备份并移除扩展 `~/.pi/agent/extensions/docs-search.ts`，再 `pi mcp add`。
@@ -43,7 +48,7 @@ docs-search-install --url https://docs.example.com
 | `--mcp-arg KEY=VALUE` | 追加 docs-search-mcp 启动参数（可重复），如 `--mcp-arg proxy=direct` |
 | `--list` | 只列出检测到的 agent 与配置状态，不写入 |
 | `--dry-run` | 预览将要执行的写入，不落盘 |
-| `--force` | 覆盖已存在的 docs-search 条目（默认跳过；覆盖前备份 `.bak`） |
+| `--force` | 覆盖已存在的 docs-search 条目（默认跳过；JSON 直写类覆盖前备份 `.bak`，CLI 类按官方语义覆盖） |
 
 ## 模式
 
@@ -56,8 +61,9 @@ docs-search-install --url https://docs.example.com
 ## 幂等与备份
 
 - 目标条目已存在 → 跳过并提示（不重复加、不改内容）
-- `--force` → 覆盖；覆盖前把原文件复制为 `<文件名>.bak`（已存在 `.bak` 不再覆盖，保留首次备份）
-- JSON 解析失败（如 opencode.jsonc 含注释的损坏文件）→ 跳过该家并保留原文件，不破坏
+- `--force` → 覆盖；JSON 直写类覆盖前把原文件复制为 `<文件名>.bak`（已存在 `.bak` 不再覆盖，保留首次备份）；
+  CLI 类按官方语义覆盖（官方 `add` 拒绝重名时先 `mcp remove` 再 `mcp add`，如 `claude mcp remove -s user docs-search`）
+- JSON 解析失败（如 zcode 的 `config.json` 损坏）→ 跳过该家并保留原文件，不破坏
 
 ## 安全注意
 
@@ -70,7 +76,7 @@ docs-search-install --url https://docs.example.com
 
 ```bash
 # 只装某几家（本地模式）
-docs-search-install --dir ./docs --agents pi,cursor,opencode
+docs-search-install --dir ./docs --agents pi,cursor,codex,claude,copilot
 
 # 远程模式 + 连接代理 + 只预览
 docs-search-install --url https://docs.example.com --mcp-arg proxy=direct --dry-run
@@ -87,8 +93,8 @@ docs-search-install --list
 | 现象 | 原因 / 处理 |
 |---|---|
 | `跳过：未检测到` | 该 agent 未安装或其配置目录不存在——先装 agent 再重跑 |
-| `跳过：JSON 解析失败` | 配置文件含注释/损坏（如 opencode.jsonc）——安装器避免破坏，按 [MCP.md](MCP.md) 手动配置 |
-| `CLI 失败（exit ...）` | reasonix/qoder/pi 官方 CLI 报错（如 MCP server 启动校验失败）——看 stderr 提示 |
+| `跳过：JSON 解析失败` | 配置文件损坏（如 zcode `config.json`）——安装器避免破坏，按 [MCP.md](MCP.md) 手动配置 |
+| `CLI 失败（exit ...）` | reasonix/qoder/pi/codex/claude/copilot/opencode 官方 CLI 报错（如 MCP server 启动校验失败）——看 stderr 提示 |
 | Windows 下 `reasonix` 等找不到 | npm shim（.cmd）需经 `cmd /c` 执行——安装器已内置处理（`_run()`） |
 | 安装后 agent 无工具 | 重启 agent 会话/`/reload`；Command Code headless `-p` 的 harness 限制见 [MCP.md](MCP.md) |
 

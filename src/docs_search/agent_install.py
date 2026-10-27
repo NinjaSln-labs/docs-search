@@ -1,13 +1,13 @@
-"""十家 agent 一键安装 docs-search MCP 配置（零依赖，Python 标准库）。
+"""十三家 agent 一键安装 docs-search MCP 配置（零依赖，Python 标准库）。
 
 设计：
 - 每家一个适配器（detect 检测是否已安装 / install 幂等写入配置）
 - 写入方式分三类：
-  JSON 直写（cursor/cline/opencode/commandcode/zcode/mcode——mcpServers 或 mcp.servers 映射合并）
-  CLI 调用（reasonix/qoder/pi——官方 CLI 管理 MCP，配置格式交给官方）
+  JSON 直写（cursor/cline/commandcode/zcode/mcode——mcpServers 或 mcp.servers 映射合并）
+  CLI 调用（reasonix/qoder/pi/codex/claude/copilot/opencode——官方 CLI 管理 MCP，配置格式交给官方）
   文件 patch（dsh——cordis.patch.yml insert 行追加）
-- 幂等：目标条目已存在时跳过（--force 覆盖）；覆盖前备份原文件（<file>.bak）
-- 安全：不触碰无关配置段；JSON 解析失败（如 opencode.jsonc 含注释）跳过该家并提示
+- 幂等：目标条目已存在时跳过（--force 覆盖；JSON 直写类覆盖前备份 <file>.bak，CLI 类按官方语义覆盖）
+- 安全：不触碰无关配置段；JSON 解析失败（如损坏的 zcode config.json）跳过该家并提示
 
 说明：pi 新版内置 MCP，改走 `pi mcp add`（~/.pi/agent/mcp.json）；旧版无 MCP 的 pi 可改用
 仓库 integrations/pi/docs-search.ts 扩展（见 docs/MCP.md）。
@@ -43,19 +43,15 @@ AGENTS = [
     "reasonix",
     "qoder",
     "dsh",
+    "codex",
+    "claude",
+    "copilot",
 ]
 
-AGENT_NAMES_ZH = {
-    "pi": "pi（内置 MCP）",
-    "cursor": "Cursor",
-    "cline": "Cline",
-    "opencode": "OpenCode",
-    "mcode": "MiniMax Code（mcode）",
-    "commandcode": "Command Code",
-    "zcode": "ZCode",
-    "reasonix": "Reasonix",
-    "qoder": "Qoder（qodercn）",
-    "dsh": "DSH",
+# --agents 兼容别名（用户习惯写法 → 已注册适配器名）
+AGENT_ALIASES = {
+    "qodercn": "qoder",
+    "command-code": "commandcode",
 }
 
 
@@ -211,54 +207,6 @@ class CommandCodeInstaller(JsonMapInstaller):
         return "Command Code：~/.commandcode/mcp.json（user-scope mcpServers）"
 
 
-class OpenCodeInstaller(JsonMapInstaller):
-    """OpenCode V2：mcp.servers.<name> local 命令数组（不是 mcp 下直接放名字）。"""
-
-    name = "opencode"
-    kind = "json"
-    server_key = "servers"
-
-    @property
-    def config_path(self) -> Path:
-        return home() / ".config" / "opencode" / "opencode.jsonc"
-
-    def detect(self) -> bool:
-        return self.config_path.parent.exists()
-
-    def entry_status(self, mode: str) -> str:
-        p = self.config_path
-        if not p.exists():
-            return "absent"
-        try:
-            data = _json_read(p)
-        except ValueError:
-            return "absent"
-        mcp = data.get("mcp", {}) if isinstance(data, dict) else {}
-        servers = mcp.get("servers", {}) if isinstance(mcp, dict) else {}
-        return "exists" if SERVER_NAME in servers else "absent"
-
-    def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
-        p = self.config_path
-        if p.exists():
-            try:
-                data = _json_read(p)
-            except ValueError as e:
-                return f"跳过：{e}"
-        else:
-            data = {}
-        mcp = data.setdefault("mcp", {})
-        servers = mcp.setdefault("servers", {})
-        if SERVER_NAME in servers and not force:
-            return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
-        servers[SERVER_NAME] = {
-            "type": "local",
-            "command": build_command(mode, value, extra_args),
-            "environment": {},
-        }
-        _json_write(p, data)
-        return f"已写入 {p}（{'覆盖' if force else '新增'} {SERVER_NAME}）"
-
-
 class ZCodeInstaller(JsonMapInstaller):
     """ZCode CLI：mcp.servers 键（注意不是 mcpServers），与 provider/model 同文件。"""
 
@@ -356,6 +304,7 @@ class CliInstaller(BaseInstaller):
     cli_alt = None
     list_args: tuple[str, ...] = ()
     add_args: tuple[str, ...] = ()
+    remove_args: tuple[str, ...] = ()  # 非空时 --force 先 remove 再 add（官方 add 拒绝重名）
     check_needle = SERVER_NAME
 
     def detect(self) -> bool:
@@ -372,8 +321,16 @@ class CliInstaller(BaseInstaller):
 
     def install(self, mode: str, value: str, force: bool, extra_args: list[tuple[str, str]] | None = None) -> str:
         cmd = build_command(mode, value, extra_args)
-        if self.entry_status(mode) == "exists" and not force:
+        exists = self.entry_status(mode) == "exists"
+        if exists and not force:
             return f"已存在 {SERVER_NAME} 条目（--force 覆盖）"
+        if exists and self.remove_args:
+            try:
+                r = _run([self.cli, *self.remove_args, SERVER_NAME], timeout=60)
+            except FileNotFoundError:
+                return f"跳过：找不到 CLI {self.cli}"
+            if r.returncode != 0:
+                return f"覆盖失败（remove exit {r.returncode}）：{(r.stderr or r.stdout).strip()[:200]}"
         try:
             r = _run([self.cli, *self.add_args, SERVER_NAME, "--", *cmd], timeout=120)
         except FileNotFoundError:
@@ -534,10 +491,76 @@ class PiInstaller(CliInstaller):
         return super().install(mode, value, force, extra_args) + migrated
 
 
+class OpenCodeInstaller(CliInstaller):
+    """OpenCode V2：全局配置由官方 CLI 管理（不再解析 JSONC，含注释的配置也能写）。
+
+    `opencode mcp list` 在 2.2.0 实测不显示全局条目 ⇒ 幂等判定读
+    `opencode debug config --standalone` 的解析结果，并且只认 global 文档（避免项目级配置误判）。
+    `--standalone` 隔离用户已运行的后台服务，避免端口冲突/读到旧配置。
+    """
+
+    name = "opencode"
+    cli = "opencode"
+    list_args = ("mcp", "list")
+    add_args = ("mcp", "add", "--global")
+
+    def describe(self) -> str:
+        return "OpenCode：opencode mcp add --global（~/.config/opencode/opencode.jsonc）"
+
+    def entry_status(self, mode: str) -> str:
+        if not self.detect():
+            return "absent"
+        try:
+            out = _run([self.cli, "debug", "config", "--standalone"], timeout=60).stdout
+            docs = json.loads(out)
+        except Exception:  # noqa: BLE001 -- CLI 异常/非 JSON 按未检测处理
+            return "absent"
+        global_dir = str(home() / ".config" / "opencode")
+        for doc in docs if isinstance(docs, list) else []:
+            if not isinstance(doc, dict) or not str(doc.get("path", "")).startswith(global_dir):
+                continue
+            mcp = (doc.get("info") or {}).get("mcp") or {}
+            if SERVER_NAME in (mcp.get("servers") or {}):
+                return "exists"
+        return "absent"
+
+
+class CodexInstaller(CliInstaller):
+    name = "codex"
+    cli = "codex"
+    list_args = ("mcp", "list")
+    add_args = ("mcp", "add")
+
+    def describe(self) -> str:
+        return "Codex：codex mcp add（~/.codex/config.toml）"
+
+
+class ClaudeInstaller(CliInstaller):
+    name = "claude"
+    cli = "claude"
+    list_args = ("mcp", "list")
+    add_args = ("mcp", "add", "-s", "user")
+    remove_args = ("mcp", "remove", "-s", "user")
+
+    def describe(self) -> str:
+        return "Claude Code：claude mcp add -s user（~/.claude.json，user scope）"
+
+
+class CopilotInstaller(CliInstaller):
+    name = "copilot"
+    cli = "copilot"
+    list_args = ("mcp", "list")
+    add_args = ("mcp", "add")
+    remove_args = ("mcp", "remove")
+
+    def describe(self) -> str:
+        return "GitHub Copilot CLI：copilot mcp add（~/.copilot/mcp-config.json）"
+
+
 INSTALLERS: dict[str, BaseInstaller] = {c.name: c for c in [
     PiInstaller(), CursorInstaller(), ClineInstaller(), OpenCodeInstaller(),
     McodeInstaller(), CommandCodeInstaller(), ZCodeInstaller(), ReasonixInstaller(),
-    QoderInstaller(), DshInstaller(),
+    QoderInstaller(), DshInstaller(), CodexInstaller(), ClaudeInstaller(), CopilotInstaller(),
 ]}
 
 
@@ -548,12 +571,12 @@ def detect_all() -> dict[str, bool]:
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="docs-search-install",
-        description="十家 agent 一键安装 docs-search MCP 配置（幂等，覆盖前备份 .bak）",
+        description="十三家 agent 一键安装 docs-search MCP 配置（幂等，覆盖前备份 .bak）",
     )
     target = p.add_mutually_exclusive_group()
     target.add_argument("--dir", metavar="PATH", help="本地模式：文档根目录（默认 ./docs）")
     target.add_argument("--url", metavar="URL", help="远程模式：已运行 docs-search 服务地址（认证走环境变量回退）")
-    p.add_argument("--agents", metavar="LIST", help="子集，逗号分隔（默认全部检测到的）")
+    p.add_argument("--agents", metavar="LIST", help="子集，逗号分隔（默认全部检测到的；别名：qodercn→qoder，command-code→commandcode）")
     p.add_argument("--mcp-arg", metavar="KEY=VALUE", action="append", default=[],
                    help="追加 docs-search-mcp 启动参数（可重复），如 --mcp-arg proxy=direct（认证参数也可，但注意会明文落盘，建议用环境变量回退）")
     p.add_argument("--list", action="store_true", help="只列出检测到的 agent 与配置状态，不写入")
@@ -582,9 +605,10 @@ def main(argv: list[str] | None = None) -> int:
         mode, value = "local", str(Path("./docs").resolve())
 
     wanted = [a.strip() for a in args.agents.split(",")] if args.agents else AGENTS
+    wanted = [AGENT_ALIASES.get(a, a) for a in wanted]
     wanted = [a for a in wanted if a in INSTALLERS]
     if not wanted:
-        print("未指定有效 agent（可用: " + ", ".join(AGENTS) + "）")
+        print("未指定有效 agent（可用: " + ", ".join(AGENTS) + "；别名: qodercn→qoder，command-code→commandcode）")
         return 2
 
     extra_args: list[tuple[str, str]] = []

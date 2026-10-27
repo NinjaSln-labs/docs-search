@@ -1,6 +1,6 @@
 """docs-search-mcp: docs-search 的 MCP(Model Context Protocol)server——stdio transport,纯标准库实现
 
-对接支持 MCP 的 AI agent(cursor / zcode / qorder / dsh-mcp-client 等):
+对接支持 MCP 的 AI agent(cursor / zcode / qoder / dsh-mcp-client 等):
   stdio server:  docs-search-mcp --dir <文档目录>
   cursor:        ~/.cursor/mcp.json → {"command": "docs-search-mcp", "args": ["--dir", "..."]}
   qoder:         qoder mcp add docs -- docs-search-mcp --dir ...
@@ -567,7 +567,7 @@ def main():
     win_utf8()
     parser = argparse.ArgumentParser(
         prog="docs-search-mcp",
-        description="docs-search MCP server (stdio) — 供 cursor/zcode/qorder/dsh 等 MCP 客户端对接;"
+        description="docs-search MCP server (stdio) — 供 cursor/zcode/qoder/dsh 等 MCP 客户端对接;"
         "默认本地模式,可用 --url 切远程模式(连接已运行的 docs-search 服务)",
     )
     parser.add_argument("dir_pos", nargs="?", default=None, help="文档根目录(默认 ./docs 或 $DOCS_SEARCH_DIR;远程模式忽略)")

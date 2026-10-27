@@ -1,7 +1,8 @@
 """docs-search-install 一键安装器单元测试。
 
-覆盖：各家配置格式合并（cursor/cline/opencode/commandcode/zcode/mcode）、幂等、--force 覆盖、
-备份生成、dry-run 不落盘、CLI 调用适配器（mock，reasonix/qoder/pi）、dsh patch 追加。
+覆盖：各家配置格式合并（cursor/cline/commandcode/zcode/mcode）、幂等、--force 覆盖、
+备份生成、dry-run 不落盘、CLI 调用适配器（mock，reasonix/qoder/pi/codex/claude/copilot/opencode）、
+dsh patch 追加、--agents 别名。
 用 monkeypatch 将 HOME 指向 tmp_path，隔离用户真实配置。
 """
 
@@ -67,17 +68,37 @@ def test_json_mcpservers_install_and_idempotent(fake_home, cls, expect_path):
     assert p.with_name(p.name + ".bak").exists()  # 备份生成
 
 
-def test_opencode_v2_servers_format(fake_home):
+def test_opencode_cli_install_and_entry_status(fake_home, monkeypatch):
+    """opencode 2.2：写走官方 CLI；幂等判定读 debug config 的 global 文档。"""
     inst = ai.OpenCodeInstaller()
-    p = fake_home / ".config" / "opencode" / "opencode.jsonc"
-    _write(p, {"mcp": {"servers": {"ctx": {"type": "remote", "url": "x"}}}})
+    monkeypatch.setattr(ai, "_cli_exists", lambda *names: True)
+    runs = []
 
-    inst.install("local", "/docs", force=False)
-    data = json.loads(p.read_text(encoding="utf-8"))
-    s = data["mcp"]["servers"][ai.SERVER_NAME]
-    assert s["type"] == "local"
-    assert s["command"] == ["docs-search-mcp", "--dir", "/docs"]  # V2 命令数组
-    assert data["mcp"]["servers"]["ctx"]["type"] == "remote"  # 无关条目保留
+    def fake_run(args, timeout):
+        runs.append(args)
+        if "debug" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="[]", stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="added docs-search", stderr="")
+
+    monkeypatch.setattr(ai, "_run", fake_run)
+    r = inst.install("local", "/docs", force=False)
+    assert "added docs-search" in r
+    assert runs[-1] == ["opencode", "mcp", "add", "--global", "docs-search", "--",
+                        "docs-search-mcp", "--dir", "/docs"]
+
+    cfg = fake_home / ".config" / "opencode" / "opencode.jsonc"
+    docs = [{"type": "document", "path": str(cfg),
+             "info": {"mcp": {"servers": {ai.SERVER_NAME: {"type": "local"}}}}}]
+    monkeypatch.setattr(ai, "_run",
+                        lambda args, timeout: subprocess.CompletedProcess(
+                            args, 0, stdout=json.dumps(docs), stderr=""))
+    assert inst.entry_status("local") == "exists"
+
+    docs[0]["path"] = str(fake_home / "proj" / "opencode.jsonc")
+    monkeypatch.setattr(ai, "_run",
+                        lambda args, timeout: subprocess.CompletedProcess(
+                            args, 0, stdout=json.dumps(docs), stderr=""))
+    assert inst.entry_status("local") == "absent"  # 项目级条目不算全局已配置
 
 
 def test_zcode_servers_key_not_mcpservers(fake_home):
@@ -96,8 +117,8 @@ def test_zcode_servers_key_not_mcpservers(fake_home):
 
 def test_json_parse_error_skips_without_destroying(fake_home):
     """损坏/含注释 JSON（如 jsonc）解析失败 → 跳过并保留原文件。"""
-    inst = ai.OpenCodeInstaller()
-    p = fake_home / ".config" / "opencode" / "opencode.jsonc"
+    inst = ai.ZCodeInstaller()
+    p = fake_home / ".zcode" / "cli" / "config.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text('{ // jsonc comment\n  "mcp": {}\n}', encoding="utf-8")
     before = p.read_text(encoding="utf-8")
@@ -144,12 +165,12 @@ def test_extra_args_appended_to_config(fake_home):
     data = json.loads((fake_home / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
     assert data["mcpServers"][ai.SERVER_NAME]["args"] == \
         ["--url", "https://srv", "--proxy", "direct", "--token", "T"]
-    # OpenCode V2：command 数组
-    oc = ai.OpenCodeInstaller()
-    oc.install("local", "/docs", force=False, extra_args=extra)
-    data = json.loads((fake_home / ".config" / "opencode" / "opencode.jsonc").read_text(encoding="utf-8"))
-    assert data["mcp"]["servers"][ai.SERVER_NAME]["command"] == \
-        ["docs-search-mcp", "--dir", "/docs", "--proxy", "direct", "--token", "T"]
+    # ZCode：command/args 拆分
+    zc = ai.ZCodeInstaller()
+    zc.install("local", "/docs", force=False, extra_args=extra)
+    data = json.loads((fake_home / ".zcode" / "cli" / "config.json").read_text(encoding="utf-8"))
+    assert data["mcp"]["servers"][ai.SERVER_NAME]["args"] == \
+        ["--dir", "/docs", "--proxy", "direct", "--token", "T"]
     # dsh patch
     prof = fake_home / ".dsh" / "profiles" / "p"
     prof.mkdir(parents=True)
@@ -279,6 +300,67 @@ def test_cli_installer_skips_when_exists(fake_home, monkeypatch):
     assert "已存在" in r
 
 
+@pytest.mark.parametrize("cls,prefix", [
+    (ai.CodexInstaller, ["codex", "mcp", "add"]),
+    (ai.ClaudeInstaller, ["claude", "mcp", "add", "-s", "user"]),
+    (ai.CopilotInstaller, ["copilot", "mcp", "add"]),
+])
+def test_new_cli_installers_calls(fake_home, monkeypatch, cls, prefix):
+    inst = cls()
+    monkeypatch.setattr(ai, "_cli_exists", lambda *names: True)
+    runs = []
+
+    def fake_run(args, timeout):
+        runs.append(args)
+        return subprocess.CompletedProcess(
+            args, 0, stdout="" if "list" in args else "added docs-search", stderr="")
+
+    monkeypatch.setattr(ai, "_run", fake_run)
+    r = inst.install("remote", "https://srv", force=False)
+    assert "added docs-search" in r
+    assert runs[-1] == prefix + ["docs-search", "--", "docs-search-mcp", "--url", "https://srv"]
+
+    monkeypatch.setattr(ai, "_run",
+                        lambda args, timeout: subprocess.CompletedProcess(args, 0, stdout="docs-search", stderr=""))
+    assert inst.entry_status("remote") == "exists"
+
+
+def test_cli_force_removes_before_add(fake_home, monkeypatch):
+    """官方 add 拒绝重名（claude/copilot）⇒ --force 先 remove 再 add。"""
+    inst = ai.ClaudeInstaller()
+    monkeypatch.setattr(ai, "_cli_exists", lambda *names: True)
+    runs = []
+
+    def fake_run(args, timeout):
+        runs.append(args)
+        if "list" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="docs-search", stderr="")
+        if "remove" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="removed", stderr="")
+        return subprocess.CompletedProcess(args, 0, stdout="added docs-search", stderr="")
+
+    monkeypatch.setattr(ai, "_run", fake_run)
+    r = inst.install("local", "/docs", force=True)
+    assert "added docs-search" in r
+    assert ["claude", "mcp", "remove", "-s", "user", "docs-search"] in runs
+    assert runs[-1] == ["claude", "mcp", "add", "-s", "user", "docs-search", "--",
+                        "docs-search-mcp", "--dir", "/docs"]
+
+
+def test_cli_force_remove_failure_reports(fake_home, monkeypatch):
+    inst = ai.CopilotInstaller()
+    monkeypatch.setattr(ai, "_cli_exists", lambda *names: True)
+
+    def fake_run(args, timeout):
+        if "list" in args:
+            return subprocess.CompletedProcess(args, 0, stdout="docs-search", stderr="")
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="remove boom")
+
+    monkeypatch.setattr(ai, "_run", fake_run)
+    r = inst.install("local", "/docs", force=True)
+    assert "覆盖失败" in r and "remove boom" in r
+
+
 # ---------------------------------------------------------------- main() 流程
 
 def test_main_list_and_dry_run(fake_home, capsys):
@@ -303,6 +385,27 @@ def test_main_installs_detected_only(fake_home):
         assert data["mcpServers"][ai.SERVER_NAME]["args"] == ["--dir", "/docs/lib"]
     # 未安装的（如 opencode）不应被创建
     assert not (fake_home / ".config" / "opencode").exists()
+
+
+def test_main_agent_alias_command_code(fake_home):
+    _write(fake_home / ".commandcode" / "mcp.json", {"mcpServers": {}})
+    assert ai.main(["--dir", "/docs", "--agents", "command-code"]) == 0
+    data = json.loads((fake_home / ".commandcode" / "mcp.json").read_text(encoding="utf-8"))
+    assert ai.SERVER_NAME in data["mcpServers"]
+
+
+def test_main_agent_alias_qodercn(fake_home, monkeypatch):
+    monkeypatch.setattr(ai, "_cli_exists", lambda *names: True)
+    runs = []
+
+    def fake_run(args, timeout):
+        runs.append(args)
+        return subprocess.CompletedProcess(
+            args, 0, stdout="" if "list" in args else "added docs-search", stderr="")
+
+    monkeypatch.setattr(ai, "_run", fake_run)
+    assert ai.main(["--dir", "/docs", "--agents", "qodercn"]) == 0
+    assert runs[-1][0] == "qodercn"
 
 
 def test_main_remote_mode_and_agents_subset(fake_home):

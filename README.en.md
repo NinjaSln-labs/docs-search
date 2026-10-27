@@ -9,7 +9,7 @@ Zero-dependency local document search engine. Pure Python stdlib, SQLite index, 
 - **Zero dependencies** — Python stdlib only (3.10+), no pip install required to run
 - **Fast** — SQLite index, retrieval < 50ms
 - **Auto re-index** — detects file changes before every search
-- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code / MiniMax Code / pi, plug-and-play); local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth); `docs-search-install` writes the config into every installed agent in one shot
+- **AI Agent integration** — built-in MCP stdio server (Cursor / ZCode / Qoder / DSH / Cline / OpenCode / Reasonix / Command Code / MiniMax Code / pi / Codex / Claude Code / GitHub Copilot CLI, plug-and-play); local mode or remote mode (`--url` to an already-running service, with optional Bearer/Basic auth); `docs-search-install` writes the config into every installed agent in one shot
 - **Remote deployment** — `docs-search-web --host 0.0.0.0 --token <T>` as an independent remote service (non-loopback listening requires auth); backend and agents can be deployed separately
 - **Web UI** — built-in search page with drag-and-drop `.md` upload
 - **Multi-corpus isolation** — each docs directory gets its own index; every operation may carry a `workspace` to switch to a self-contained library (MCP/API/CLI alike); search/list support `workspace=all` cross-library aggregation
@@ -91,7 +91,7 @@ qodercn mcp add -s user docs-search -- docs-search-mcp --dir /path/to/docs
 
 Exposes 5 tools: `docs_search` / `docs_read` / `docs_write` / `docs_delete` / `docs_info`.
 One-shot setup for every installed agent (pi / cursor / cline / opencode / commandcode / zcode /
-reasonix / qoder / dsh), idempotent with dry-run preview:
+reasonix / qoder / dsh / codex / claude / copilot), idempotent with dry-run preview:
 
 ```bash
 docs-search-install --dir D:/path/to/your/docs               # local mode
@@ -103,9 +103,10 @@ docs-search-install --dir ./docs --dry-run                  # preview, no writes
 
 Full reference (params / support matrix / troubleshooting): [docs/INSTALL.md](docs/INSTALL.md).
 For ZCode (Settings → MCP Servers), DSH (`@deepseek-ai/dsh-mcp-client` plugin row), Cline
-(`~/.cline/data/settings/cline_mcp_settings.json`), OpenCode (`mcp.servers`), Reasonix
-(`reasonix mcp add`), Command Code (`commandcode mcp add`), MiniMax Code (`~/.minimax/mcp.json`)
-and pi (`pi mcp add`), see the [Agent Integration Guide](docs/MCP.md).
+(`~/.cline/data/settings/cline_mcp_settings.json`), OpenCode (`opencode mcp add --global`), Reasonix
+(`reasonix mcp add`), Command Code (`commandcode mcp add`), MiniMax Code (`~/.minimax/mcp.json`),
+pi (`pi mcp add`), Codex (`codex mcp add`), Claude Code (`claude mcp add -s user`) and GitHub
+Copilot CLI (`copilot mcp add`), see the [Agent Integration Guide](docs/MCP.md).
 
 When a docs-search service is already running (local or remote machine, same `/api/*` interface),
 the MCP server can proxy to it instead of reading a local directory:

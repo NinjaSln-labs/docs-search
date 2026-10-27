@@ -2,6 +2,19 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Added
+
+- **Agent 适配新增 Codex / Claude Code / GitHub Copilot CLI**（`agent_install.py` / docs/MCP.md / docs/INSTALL.md）：
+  三家均走官方 CLI（`codex mcp add` / `claude mcp add -s user` / `copilot mcp add`），支持矩阵由十家扩至**十三家**；
+  `--agents` 新增别名 `qodercn`→`qoder`、`command-code`→`commandcode`。
+
+### Changed
+
+- **OpenCode 适配改走官方 CLI**（`opencode mcp add --global`）：不再解析 `opencode.jsonc`，修复含注释配置被跳过；
+  幂等判定读 `opencode debug config` 的全局文档（`opencode mcp list` 实测不列全局条目）。
+
 ## [1.5.0] — 2026-10-02
 
 ### Changed

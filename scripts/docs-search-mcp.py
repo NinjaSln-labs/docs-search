@@ -2,7 +2,7 @@
 
 优先使用已安装的 docs_search 包（pip install docs-search）；
 未安装时回退到仓库内 src/ 布局，保持 `python scripts/docs-search-mcp.py` 直跑可用。
-供 MCP 客户端（cursor / zcode / qorder / dsh 等）以 stdio 方式启动：
+供 MCP 客户端（cursor / zcode / qoder / dsh 等）以 stdio 方式启动：
   python scripts/docs-search-mcp.py --dir <文档目录>
 """
 
