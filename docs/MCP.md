@@ -77,13 +77,15 @@ Cursor 远程模式示例：
 
 | 工具 | 参数 | 说明 |
 |---|---|---|
-| `docs_search` | `query`(必填,空格分隔多关键词 AND)、`limit`、`cat`、`workspace` | 检索,返回路径 + 150 字摘要;全文跟 `docs_read`;`workspace="all"` 跨库聚合(结果带来源) |
+| `docs_search` | `query`(必填,空格分隔多关键词)、`mode`(`and`(默认)/`or`)、`limit`、`cat`、`workspace` | 检索,返回路径 + 命中点摘要;`mode="or"` 时任一关键词命中即可;全文跟 `docs_read`;`workspace="all"` 跨库聚合(结果带来源) |
 | `docs_read` | `path`(必填,相对路径)、`workspace` | 读全文（不支持 `all`） |
 | `docs_write` | `filename`(仅 `.md`)、`content`、`if_exists`(`error`/`overwrite`/`keep`)、`workspace` | 写入 `uploads/` 并即刻索引;同名默认提示(`error`,不写不覆盖),`overwrite` 强制覆盖,`keep` 生成 `-1/-2` 新文件;不支持 `all`;**勿写密钥/隐私** |
 | `docs_delete` | `path`(必须 `uploads/` 下)、`workspace` | 删除已写入文档;库内文档拒绝(设计如此);不支持 `all` |
 | `docs_info` | `mode`(`list`/`stats`)、`cat`、`workspace` | 枚举文档 / 统计与分类;`workspace="all"` 跨库聚合(带来源/库列表) |
 
-本地模式索引在每次调用前自动增量重建,无需手动维护;多关键词是精确子串 AND 匹配(含中文)。
+本地模式索引在每次调用前自动增量重建,无需手动维护;多关键词默认是精确子串 AND 匹配(含中文),
+`mode="or"` 放宽为任一命中;多词 AND 严格匹配 0 命中时对中文长词自动按二元组子串退化召回
+(响应中 `relaxed=true` 标注走了退化路径)。
 远程模式不建索引,由已运行的服务端维护。
 5 个工具均接受可选 `workspace` 参数（操作级，本地/远程一致）: 指定即切到自包含库
 `~/.docs-search/workspaces/<ws>/`，与默认库天然隔离；不传 = 默认库。

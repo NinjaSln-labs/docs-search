@@ -104,15 +104,22 @@ TOOLS = [
         "name": "docs_search",
         "description": (
             "Search a local markdown document library (agent memory / knowledge base). "
-            "Keywords are space-separated and ANDed (exact substring match, CJK included). "
+            "Keywords are space-separated and ANDed (exact substring match, CJK included; "
+            "a CJK phrase with no exact hit falls back to bigram substring recall). "
+            "Use mode=or to match any keyword instead of all. "
             "Returns matching paths with 150-char snippets; follow up with docs_read for "
             "full text. The index auto-refreshes on every call — no manual maintenance."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Keywords, space-separated (AND semantics)"},
+                "query": {"type": "string", "description": "Keywords, space-separated (AND by default)"},
                 "limit": {"type": "integer", "description": "Max results (default 8, cap 20)"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["and", "or"],
+                    "description": "Keyword combination: and=all keywords must match (default), or=any keyword matches",
+                },
                 "cat": {"type": "string", "description": "Optional category filter (top-level folder name)"},
                 "workspace": WORKSPACE_FIELD,
             },
@@ -219,14 +226,19 @@ def _search(docs_dir, db_path, args: dict) -> dict:
     except (TypeError, ValueError):
         limit = 8
     limit = max(1, min(limit, 20))
+    mode = str(args.get("mode") or "and").strip().lower() or "and"
     cat = str(args.get("cat") or "")
-    data = search_ex(docs_dir, db_path, query, cat or None, limit)
+    data = search_ex(docs_dir, db_path, query, cat or None, limit, mode)
     if not data["results"]:
         return _ok(
             f'no results for "{query}"'
             f"(库内 {load_meta(db_path).get('count', '?')} 篇;可减少关键词、换词,或 docs_info 核对)"
+            + ("（已启用 CJK 二元组退化召回仍无命中）" if data.get("relaxed") else "")
         )
-    return _ok(render_search_results(query, data["results"], data["total"], len(data["results"])))
+    text = render_search_results(query, data["results"], data["total"], len(data["results"]))
+    if data.get("relaxed"):
+        text += "\n(本次为 CJK 二元组退化召回：查询词整串未出现，按子串匹配)"
+    return _ok(text)
 
 
 def _read(docs_dir, db_path, args: dict) -> dict:
@@ -343,11 +355,12 @@ def _search_all(docs_dir, db_path, args: dict) -> dict:
     except (TypeError, ValueError):
         limit = 8
     limit = max(1, min(limit, 20))
+    mode = str(args.get("mode") or "and").strip().lower() or "and"
     cat = str(args.get("cat") or "")
     libs = _all_libs(docs_dir, db_path)
     total, merged = 0, {}
     for name, d, p in libs:
-        data = search_ex(d, p, query, cat or None, limit)
+        data = search_ex(d, p, query, cat or None, limit, mode)
         total += data["total"]
         for r in data["results"]:
             r["ws"] = name or ""

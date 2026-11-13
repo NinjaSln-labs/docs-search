@@ -347,3 +347,102 @@ class TestWebAPI:
         base, _ = server
         r = post(base, "/api/delete?path=../../secrets.md")
         assert "error" in r
+
+
+class TestSearchContract:
+    """Bug 2：limit 截断显式化 + mode 参数"""
+
+    def test_limit_capped_flag(self, server):
+        base, _ = server
+        r = get(base, "/api/search?q=TOKEN_ONE&limit=200")
+        assert r["limit"] == 50 and r["limit_capped"] is True
+        assert r["returned"] == len(r["results"])
+        assert r["truncated"] == (r["total"] > r["returned"])
+        assert r["mode"] == "and" and r["relaxed"] is False
+
+    def test_limit_within_cap_not_capped(self, server):
+        base, _ = server
+        r = get(base, "/api/search?q=TOKEN_ONE&limit=10")
+        assert r["limit"] == 10 and r["limit_capped"] is False
+
+    def test_limit_cap_configurable(self, server, monkeypatch):
+        from docs_search import core
+
+        monkeypatch.setenv(core.ENV_MAX_SEARCH_LIMIT, "3")
+        base, _ = server
+        r = get(base, "/api/search?q=TOKEN_ONE&limit=200")
+        assert r["limit"] == 3 and r["limit_capped"] is True
+
+    def test_mode_param_or(self, server, tmp_path, monkeypatch):
+        from docs_search import core
+
+        docs = tmp_path / "docs2"
+        docs.mkdir()
+        (docs / "a.md").write_text("# a\n\nALPHA\n", encoding="utf-8")
+        (docs / "b.md").write_text("# b\n\nBETA\n", encoding="utf-8")
+        db = tmp_path / "idx2.db"
+        core.rebuild_index(docs, db)
+        srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db))
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            base = f"http://127.0.0.1:{port}"
+            r = get(base, "/api/search?q=ALPHA%20BETA&mode=or")
+            assert r["mode"] == "or" and r["total"] == 2
+            r = get(base, "/api/search?q=ALPHA%20BETA&mode=and")
+            assert r["mode"] == "and" and r["total"] == 0
+        finally:
+            srv.shutdown()
+
+
+class TestUploadRateLimit:
+    """Bug 1 遗留：上传速率限制"""
+
+    def test_rate_limit_returns_429(self, tmp_path, monkeypatch):
+        from docs_search import web
+
+        monkeypatch.setenv(web.ENV_UPLOAD_RATE, "2")
+        web._UPLOAD_BUCKETS.clear()
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        db = tmp_path / "idx.db"
+        srv = HTTPServer(("127.0.0.1", 0), make_handler(docs, db))
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            base = f"http://127.0.0.1:{port}"
+            assert post(base, "/api/upload?filename=a.md", "# a\n", raw=True).get("ok")
+            assert post(base, "/api/upload?filename=b.md", "# b\n", raw=True).get("ok")
+            code, body = req(base, "/api/upload?filename=c.md", method="POST", data=b"# c\n")
+            assert code == 429 and "频繁" in body
+        finally:
+            srv.shutdown()
+            web._UPLOAD_BUCKETS.clear()
+
+    def test_no_limit_by_default(self, tmp_path, monkeypatch):
+        from docs_search import web
+
+        monkeypatch.delenv(web.ENV_UPLOAD_RATE, raising=False)
+        assert web.check_upload_rate("1.2.3.4") is None
+
+
+class TestCheckEndpoint:
+    """Bug 1 遗留：上传超时后的幂等核实手段"""
+
+    def test_check_reports_exists_and_indexed(self, server):
+        base, _ = server
+        r = get(base, "/api/check?path=code/a.md")
+        assert r["exists"] is True and r["indexed"] is True and r["size"] > 0
+
+    def test_check_missing_path(self, server):
+        base, _ = server
+        r = get(base, "/api/check?path=uploads/none.md")
+        assert r["exists"] is False and r["indexed"] is False and r["size"] is None
+
+    def test_check_after_upload(self, server):
+        base, _ = server
+        post(base, "/api/upload?filename=note.md", "# Note\n\nMARK\n", raw=True)
+        r = get(base, "/api/check?path=uploads/note.md")
+        assert r["exists"] is True and r["indexed"] is True

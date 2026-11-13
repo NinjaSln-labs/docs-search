@@ -130,7 +130,12 @@ class TestIndexLifecycle:
         assert n == 2 and not rebuilt  # 未变更不重建
         (corpus / "code" / "gamma.md").write_text("# Gamma\n", encoding="utf-8")
         n, rebuilt = core.ensure_index(corpus, db)
-        assert n == 3 and rebuilt  # 变更触发重建
+        assert n == 2 and not rebuilt  # TTL 节流窗口内不重扫、不重建
+        meta = core.load_meta(db)
+        meta["checked"] = 0  # 越过 TTL 窗口，触发一次指纹复核
+        core.save_meta(db, meta)
+        n, rebuilt = core.ensure_index(corpus, db)
+        assert n == 3 and rebuilt  # 复核到变更 → 重建
 
     def test_db_missing_triggers_rebuild(self, corpus, tmp_path):
         db = core.resolve_db_path(corpus, str(tmp_path / "idx.db"))
@@ -282,10 +287,13 @@ class TestSearchEx:
 
     def test_empty_result(self, search_corpus, search_db):
         data = core.search_ex(search_corpus, search_db, "nonexistent-xyz")
-        assert data == {"results": [], "total": 0}
+        assert data["results"] == [] and data["total"] == 0
+        assert data["returned"] == 0 and data["truncated"] is False
+        assert data["mode"] == "and" and data["relaxed"] is False
 
     def test_empty_query_guard(self, search_corpus, search_db):
-        assert core.search_ex(search_corpus, search_db, "   ") == {"results": [], "total": 0}
+        data = core.search_ex(search_corpus, search_db, "   ")
+        assert data["results"] == [] and data["total"] == 0
 
     def test_ranking_title_hit_first_then_path(self, search_corpus, search_db):
         """title 命中排在纯正文命中前；同分按 path 升序（确定性）"""
@@ -366,3 +374,143 @@ class TestRenderSearchResults:
         rows = [{"path": "a.md", "title": "A", "snippet": "…tail", "line": 0}]
         out = core.render_search_results("kw", rows, 1, 1)
         assert "(line" not in out
+
+
+# ============================================================
+# Bug 1 遗留：增量指纹免全目录 stat / 并发重建保护
+# ============================================================
+class TestIncrementalIndexing:
+    def test_update_index_entry_does_not_scan_whole_dir(self, corpus, tmp_path, monkeypatch):
+        """上传后的指纹刷新走已知的 files 映射，不再全目录 stat（批量不再 O(N²) 次 stat）"""
+        db = core.resolve_db_path(corpus, str(tmp_path / "idx.db"))
+        core.rebuild_index(corpus, db)
+        calls = []
+        orig = core.scan_meta
+
+        def counting(d):
+            calls.append(d)
+            return orig(d)
+
+        monkeypatch.setattr(core, "scan_meta", counting)
+        (corpus / "code" / "gamma.md").write_text("# Gamma\n", encoding="utf-8")
+        n, rebuilt = core.update_index_entry(corpus, db, "code/gamma.md")
+        assert n == 3 and rebuilt is False
+        assert calls == []  # 未触发全目录扫描
+        # 指纹与 files_hash(scan_meta(...)) 保持一致 → 后续 ensure_index 不误判需重建
+        assert core.map_hash(core.load_meta(db)["files"]) == core.files_hash(orig(corpus))
+
+    def test_concurrent_rebuild_does_not_raise_busy(self, corpus, tmp_path):
+        """并发重建不再抛「索引库被占用」（进程内互斥 + 退避重试）"""
+        import threading
+
+        db = core.resolve_db_path(corpus, str(tmp_path / "idx.db"))
+        errors = []
+
+        def worker():
+            try:
+                core.rebuild_index(corpus, db)
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        c = core.get_conn(db)
+        n = c.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+        c.close()
+        assert n == 2
+
+
+# ============================================================
+# Bug 2：limit 截断显式化 / 可配置
+# ============================================================
+class TestSearchLimit:
+    def test_default_limit(self, monkeypatch):
+        monkeypatch.delenv(core.ENV_MAX_SEARCH_LIMIT, raising=False)
+        assert core.resolve_max_search_limit() == core.MAX_SEARCH_LIMIT
+
+    def test_env_override(self, monkeypatch):
+        monkeypatch.setenv(core.ENV_MAX_SEARCH_LIMIT, "200")
+        assert core.resolve_max_search_limit() == 200
+
+    @pytest.mark.parametrize("raw", ["abc", "0", "-5", ""])
+    def test_invalid_env_falls_back(self, monkeypatch, raw):
+        monkeypatch.setenv(core.ENV_MAX_SEARCH_LIMIT, raw)
+        assert core.resolve_max_search_limit() == core.MAX_SEARCH_LIMIT
+
+    def test_truncated_flag_in_response(self, search_corpus, search_db):
+        data = core.search_ex(search_corpus, search_db, "deployment", limit=1)
+        assert data["total"] == 2 and data["returned"] == 1 and data["truncated"] is True
+
+
+# ============================================================
+# Bug 3：多词语义可选 + CJK 二元组退化
+# ============================================================
+class TestSearchModes:
+    def test_and_mode_default_requires_all_words(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "both.md").write_text("# both\n\n推理预算 effort 的说明\n", encoding="utf-8")
+        (docs / "one.md").write_text("# one\n\n只有推理预算\n", encoding="utf-8")
+        db = core.resolve_db_path(docs, str(tmp_path / "idx.db"))
+        core.rebuild_index(docs, db)
+        data = core.search_ex(docs, db, "推理预算 effort", limit=10)
+        assert data["mode"] == "and"
+        assert data["total"] == 1 and data["results"][0]["path"] == "both.md"
+        assert data["relaxed"] is False
+
+    def test_or_mode_returns_union(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "both.md").write_text("# both\n\n推理预算 effort 的说明\n", encoding="utf-8")
+        (docs / "one.md").write_text("# one\n\n只有推理预算\n", encoding="utf-8")
+        db = core.resolve_db_path(docs, str(tmp_path / "idx.db"))
+        core.rebuild_index(docs, db)
+        data = core.search_ex(docs, db, "推理预算 effort", limit=10, mode="or")
+        assert data["mode"] == "or" and data["total"] == 2
+        # 命中组数多的排前面
+        assert data["results"][0]["path"] == "both.md"
+
+    def test_invalid_mode_falls_back_to_and(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# a\n\n内容\n", encoding="utf-8")
+        db = core.resolve_db_path(docs, str(tmp_path / "idx.db"))
+        core.rebuild_index(docs, db)
+        data = core.search_ex(docs, db, "内容", mode="xor")
+        assert data["mode"] == "and"
+
+    def test_cjk_bigram_relaxed_fallback(self, tmp_path):
+        """整串未出现时按二元组子串召回（relaxed=true 标注）"""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# a\n\n上游与复核之间有流程\n", encoding="utf-8")
+        db = core.resolve_db_path(docs, str(tmp_path / "idx.db"))
+        core.rebuild_index(docs, db)
+        data = core.search_ex(docs, db, "上游复核流", limit=10)
+        assert data["total"] == 1 and data["results"][0]["path"] == "a.md"
+        assert data["relaxed"] is True
+
+    def test_exact_hit_not_relaxed(self, tmp_path):
+        """整串命中时不做退化，条数与排序不变（向后兼容）"""
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# a\n\n上游复核流说明\n", encoding="utf-8")
+        (docs / "b.md").write_text("# b\n\n上游复核说明\n", encoding="utf-8")
+        db = core.resolve_db_path(docs, str(tmp_path / "idx.db"))
+        core.rebuild_index(docs, db)
+        data = core.search_ex(docs, db, "上游复核流", limit=10)
+        assert data["total"] == 1 and data["results"][0]["path"] == "a.md"
+        assert data["relaxed"] is False
+
+    def test_non_cjk_query_not_relaxed(self, tmp_path):
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "a.md").write_text("# a\n\nalpha beta\n", encoding="utf-8")
+        db = core.resolve_db_path(docs, str(tmp_path / "idx.db"))
+        core.rebuild_index(docs, db)
+        data = core.search_ex(docs, db, "alpha", limit=10)
+        assert data["relaxed"] is False

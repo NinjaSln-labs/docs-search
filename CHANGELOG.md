@@ -2,6 +2,37 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [Unreleased]
+
+### Added
+
+- **`/api/search` 显式回报截断状态**（`web.py`）：响应新增 `returned`（本次返回条数）、`truncated`
+  （是否被截断）、`limit`（实际生效的上限）、`limit_capped`（请求值是否被压回上限）、
+  `mode`（本次关键词语义）、`relaxed`（是否走了 CJK 二元组退化召回）。
+  此前 `limit` 超过 50 被静默压回 50 且响应无任何标记，调用方只能把"结果被截断"
+  误判为"内容没收录"。上限改为可配置：环境变量 `DOCS_SEARCH_MAX_SEARCH_LIMIT`（默认仍为 50）。
+- **多词关键词语义可选**（`core.py` `search_ex(..., mode=...)`）：`mode=and`（默认，保持原语义）
+  / `mode=or`（任一命中即可，按命中组数降序）。Web 端点 `?mode=and|or`，MCP 工具 `docs_search`
+  新增 `mode` 参数（`integrations/pi/docs-search.ts` 同步）。
+- **CJK 检索退化召回**（`core.py`）：多词 AND 严格匹配 0 命中时，对 CJK 长词（≥3 字）自动追加
+  二元组子串匹配重试——整串未出现也能按子串召回；响应用 `relaxed=true` 标注走的是退化路径。
+  严格匹配有命中时条数与排序完全不变（向后兼容）。
+- **`GET /api/check?path=`**（`web.py`）：上传超时后核实某篇是否落库的幂等手段，
+  返回 `{path, exists, indexed, size}`（`exists`=文件在语料目录，`indexed`=已入索引）。
+- **上传速率限制**（`web.py`）：环境变量 `DOCS_SEARCH_UPLOAD_RATE`（每 IP 每分钟最大上传次数，
+  未设或非正数=不限），超限返回 `429 {"error": ...}`；只挡上传，不影响检索。
+
+### Fixed
+
+- **增量索引更新不再全目录 stat**（`core.py`）：1.6.1 的 `update_index_entry` 每次上传仍要
+  `scan_meta` 全目录 + `files_hash`，批量上传退化为 O(N²) 次 stat。现改为维护 `meta["files"]`
+  映射（`{rel: [mtime, size]}`）并用 `map_hash` 重算指纹——零系统调用，批量同步不再二次方。
+- **目录指纹复核按 TTL 节流**（`core.py` `ensure_index`）：默认 30s 内不重复全目录 stat，
+  只读端点（`/api/stats`、`/api/search`、`/api/list`）不再每次请求都扫语料目录。
+- **索引重建并发保护**（`core.py` `rebuild_index`）：进程内互斥锁（按 db_path）+ 跨进程文件锁
+  + 库被占用时退避重试（3 次，指数退避），并发上传/重建不再直接抛
+  `RuntimeError: 索引库被占用`。
+
 ## [1.6.1] — 2026-11-13
 
 ### Fixed

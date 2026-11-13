@@ -13,11 +13,17 @@
 
 API:
   GET  /api/stats                    # 统计 {count, updated, categories}
-  GET  /api/search?q=关键词&cat=     # 搜索
+  GET  /api/search?q=关键词&cat=&mode=and|or&limit=  # 搜索
+                                      # 响应含 returned/truncated/limit/limit_capped/mode/relaxed
   GET  /api/list?cat=                # 列出文档
   GET  /api/show?path=xxx            # 文档内容
+  GET  /api/check?path=xxx           # 幂等核实 {exists, indexed, size}（上传超时后确认）
   POST /api/upload?filename=x.md&if_exists=error|overwrite|keep  # 上传文档（同名策略，默认 error 提示）
   POST /api/delete?path=uploads/x.md # 删除 uploads/ 下已上传文档
+
+环境变量:
+  DOCS_SEARCH_MAX_SEARCH_LIMIT  # 单次搜索返回上限（默认 50）
+  DOCS_SEARCH_UPLOAD_RATE       # 每 IP 每分钟最大上传次数（未设=不限，超限 429）
 
 工作空间（操作级，可选）: 每个 API 请求可带 `ws=<name>` 动态切库——
 自包含库 ~/.docs-search/workspaces/<ws>/（docs + index.db），不传 = 默认库。
@@ -36,12 +42,13 @@ import hmac
 import json
 import os
 import sys
+import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .core import (
     IF_EXISTS_CHOICES,
-    MAX_SEARCH_LIMIT,
     MAX_UPLOAD_BYTES,
     ensure_index,
     get_conn,
@@ -50,6 +57,7 @@ from .core import (
     load_meta,
     resolve_db_path,
     resolve_docs_dir,
+    resolve_max_search_limit,
     resolve_upload_target,
     resolve_workspace,
     resolve_workspace_paths,
@@ -65,6 +73,32 @@ DEFAULT_PORT = 8765
 ENV_TOKEN = "DOCS_SEARCH_TOKEN"
 ENV_USER = "DOCS_SEARCH_USER"
 ENV_PASSWORD = "DOCS_SEARCH_PASSWORD"
+ENV_UPLOAD_RATE = "DOCS_SEARCH_UPLOAD_RATE"  # 每 IP 每分钟最大上传次数（0/未设 = 不限）
+_UPLOAD_BUCKETS = {}  # ip -> 最近 60s 内的上传时间戳
+_UPLOAD_BUCKETS_LOCK = threading.Lock()
+
+
+def check_upload_rate(ip):
+    """上传速率限制：按 IP 滑动窗口计数；超限返回错误消息，未超限返回 None。
+    默认不限（环境变量未设或非正数）；限流只挡上传，不影响检索。"""
+    raw = (os.environ.get(ENV_UPLOAD_RATE) or "").strip()
+    if not raw:
+        return None
+    try:
+        limit = int(raw)
+    except ValueError:
+        return None
+    if limit <= 0:
+        return None
+    now = time.time()
+    with _UPLOAD_BUCKETS_LOCK:
+        bucket = [t for t in _UPLOAD_BUCKETS.get(ip, []) if now - t < 60]
+        if len(bucket) >= limit:
+            _UPLOAD_BUCKETS[ip] = bucket
+            return f"上传过于频繁（每分钟最多 {limit} 次），请稍后再试"
+        bucket.append(now)
+        _UPLOAD_BUCKETS[ip] = bucket
+    return None
 
 
 def validate_listen_config(host, auth):
@@ -405,12 +439,23 @@ def make_handler(docs_dir, db_path, auth=None):
                     self._json(200, {"error": "请输入关键词"})
                     return
                 try:
-                    limit = int(params.get("limit", ["20"])[0])
+                    requested = int(params.get("limit", ["20"])[0])
                 except ValueError:
-                    limit = 20
-                limit = max(1, min(limit, MAX_SEARCH_LIMIT))
-                data = search_ex(docs_dir, db_path, q, cat or None, limit)
-                self._json(200, {"results": data["results"], "total": data["total"]})
+                    requested = 20
+                cap = resolve_max_search_limit()
+                limit = max(1, min(requested, cap))
+                mode = params.get("mode", ["and"])[0].strip().lower() or "and"
+                data = search_ex(docs_dir, db_path, q, cat or None, limit, mode)
+                self._json(200, {
+                    "results": data["results"],
+                    "total": data["total"],
+                    "returned": data["returned"],
+                    "truncated": data["truncated"],
+                    "limit": limit,
+                    "limit_capped": requested > cap,
+                    "mode": data["mode"],
+                    "relaxed": data["relaxed"],
+                })
 
             elif path == "/api/list":
                 ensure_index(docs_dir, db_path)
@@ -433,6 +478,20 @@ def make_handler(docs_dir, db_path, auth=None):
                     self._json(200, {"error": "文档不存在"})
                     return
                 self._json(200, {"title": row[0], "body": row[1], "size": row[2], "cat": row[3], "path": p})
+            elif path == "/api/check":
+                # 幂等核实：上传超时后确认某篇是否已落库（exists=文件在 / indexed=已入索引）
+                ensure_index(docs_dir, db_path)
+                p = params.get("path", [""])[0]
+                c = get_conn(db_path)
+                row = c.execute("SELECT size FROM docs WHERE path=?", (p,)).fetchone()
+                c.close()
+                target = docs_dir / p
+                self._json(200, {
+                    "path": p,
+                    "exists": target.exists(),
+                    "indexed": row is not None,
+                    "size": row[0] if row else None,
+                })
             else:
                 self._send(404, "text/plain; charset=utf-8", b"not found")
 
@@ -462,13 +521,15 @@ def make_handler(docs_dir, db_path, auth=None):
                     return
                 cat = params.get("cat", [""])[0]
                 try:
-                    limit = int(params.get("limit", ["20"])[0])
+                    requested = int(params.get("limit", ["20"])[0])
                 except ValueError:
-                    limit = 20
-                limit = max(1, min(limit, MAX_SEARCH_LIMIT))
+                    requested = 20
+                cap = resolve_max_search_limit()
+                limit = max(1, min(requested, cap))
+                mode = params.get("mode", ["and"])[0].strip().lower() or "and"
                 total, merged = 0, {}
                 for name, d, p in self._all_libs():
-                    data = search_ex(d, p, q, cat or None, limit)
+                    data = search_ex(d, p, q, cat or None, limit, mode)
                     total += data["total"]
                     for r in data["results"]:
                         r["ws"] = name or ""
@@ -476,7 +537,16 @@ def make_handler(docs_dir, db_path, auth=None):
                 # 按库轮转合并（轮转序 = 库名排序，确定性）：避免单库占满 limit、
                 # 其他库结果永远不可见的回归；跨库统一截到 limit 条
                 results = round_robin_merge(merged)[:limit]
-                self._json(200, {"results": results, "total": total, "workspace": "all"})
+                self._json(200, {
+                    "results": results,
+                    "total": total,
+                    "returned": len(results),
+                    "truncated": total > len(results),
+                    "limit": limit,
+                    "limit_capped": requested > cap,
+                    "mode": mode,
+                    "workspace": "all",
+                })
                 return
             if path == "/api/list":
                 cat = params.get("cat", [""])[0]
@@ -516,6 +586,10 @@ def make_handler(docs_dir, db_path, auth=None):
 
         def _api_upload(self, params):
             if self._reject_all(self._ws_name(params), "上传"):
+                return
+            rate_err = check_upload_rate(self.client_address[0] if self.client_address else "unknown")
+            if rate_err:
+                self._json(429, {"error": rate_err})
                 return
             docs_dir, db_path = self._lib(params)
             filename = sanitize_filename(params.get("filename", [""])[0])

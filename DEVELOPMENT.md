@@ -55,6 +55,15 @@ python -m pytest tests/test_mcp.py                      # 只跑 MCP E2E
   命中在 5KB 后→尾部信号 `"…"+末 150 字` line=0；渲染 `render_search_results` 全字段 `.get()` 容错、不截 snippet
 - 聚合（workspace=all）：各库 `search_ex(limit)` → `round_robin_merge` 按库轮转合并（轮转序=库名排序）→ 截 limit；
   total = Σ各库；limit 上限：web `MAX_SEARCH_LIMIT=50`，MCP 工具 20（schema 契约），CLI 默认 8 无上限钳制
+- 关键词语义（`core.search_ex(..., mode=...)`）：`and`（默认，所有词都要命中）/ `or`（任一命中，
+  按命中组数降序）；多词 AND 严格匹配 0 命中时，对 CJK 长词（≥3 字）自动追加二元组子串重试
+  （`relaxed=true` 标注走了退化路径），严格匹配有命中时条数与排序完全不变
+- 索引生命周期：`ensure_index` 的目录指纹复核按 TTL 节流（`INDEX_CHECK_TTL=30s`，只读端点不再每次
+  全目录 stat）；`update_index_entry` 用 `meta["files"]`（`{rel: [mtime, size]}`）+ `map_hash`
+  重算指纹——零系统调用，批量上传不再 O(N²) 次 stat；`rebuild_index` 有进程内互斥锁
+  （按 db_path）+ 跨进程文件锁 + 库被占用时退避重试（`REBUILD_RETRY=3`），不再直接抛「索引库被占用」
+- 服务端可配置项：`DOCS_SEARCH_MAX_SEARCH_LIMIT`（单次搜索返回上限，默认 50）、
+  `DOCS_SEARCH_UPLOAD_RATE`（每 IP 每分钟上传次数，未设=不限，超限 429）
 - **禁止**在源码中出现任何个人/本机绝对路径（测试 `test_no_hardcoded_paths` 会拦截）
 
 ## 设计约束

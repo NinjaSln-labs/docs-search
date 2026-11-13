@@ -14,6 +14,7 @@
 | GET  | `/api/search` | 关键词搜索 |
 | GET  | `/api/list`   | 枚举文档 |
 | GET  | `/api/show`   | 取文档全文 |
+| GET  | `/api/check`  | 幂等核实某篇是否落库（上传超时后确认） |
 | POST | `/api/upload?filename=x.md&if_exists=error\|overwrite\|keep` | 上传文档（同名策略，默认 error 提示） |
 | POST | `/api/delete?path=uploads/x.md` | 删除已上传文档 |
 | GET  | `/`           | Web UI（HTML） |
@@ -63,39 +64,76 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=n.md&ws=proj-b' --data-b
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `q`  | ✓ | 搜索关键词。多个关键词用空格分隔，语义为 AND（都要命中） |
+| `q`  | ✓ | 搜索关键词。多个关键词用空格分隔，语义由 `mode` 决定（默认 AND） |
 | `cat` | ✗ | 限定分类（一级子目录名），如 `uploads` |
+| `mode` | ✗ | 多词语义：`and`（默认，都要命中）/ `or`（任一命中，按命中组数降序） |
+| `limit` | ✗ | 本次返回条数，默认 20，上限 50（`DOCS_SEARCH_MAX_SEARCH_LIMIT` 可调） |
 
 **示例**
 
 ```bash
 curl 'http://127.0.0.1:8765/api/search?q=MCP%20协议'
 curl 'http://127.0.0.1:8765/api/search?q=上传&cat=uploads'
+curl 'http://127.0.0.1:8765/api/search?q=推理%20预算&mode=or'
 ```
 
 **响应**
 
 ```json
 {
+  "total": 304,
+  "returned": 50,
+  "truncated": true,
+  "limit": 50,
+  "limit_capped": true,
+  "mode": "and",
+  "relaxed": false,
   "results": [
     {
       "path": "infra/mcp.md",
       "cat": "infra",
       "title": "MCP 协议与 Server 生态手册",
-      "snippet": "---  ## 1. MCP 是什么  MCP（Model Context Protocol）..."
+      "snippet": "---  ## 1. MCP 是什么  MCP（Model Context Protocol）...",
+      "line": 12
     }
   ]
 }
 ```
 
-- 最多返回 20 条；`snippet` 为正文前 150 字符（换行替换为空格）
-- 匹配范围：标题或正文，子串匹配（LIKE `%kw%`），无分词、无相关度排序
+- `total` = 全量命中数（不受 `limit` 影响）；`returned` = 本次实际返回条数；
+  `truncated` = 是否被 `limit` 截断——**调用方据此区分"结果被截断"与"内容没收录"**
+- `limit` = 实际生效的上限；`limit_capped` = 请求的 `limit` 是否被压回上限（此前上限静默压缩、无任何标记）
+- `mode` = 本次关键词语义；`relaxed` = 本次是否走了 CJK 二元组退化召回
+  （多词 AND 严格匹配 0 命中时，对 CJK 长词追加二元组子串匹配重试）
+- `snippet` 为命中点居中 200 字窗口（关键词带 `【】` 标注，换行替换为空格），
+  `line` 为命中行号（`0` = 命中在 5KB 之后、无法定位到行）
+- 匹配范围：标题或正文，子串匹配（LIKE `%kw%`），排序 = 标题命中词数降序、路径升序
 
 **错误**
 
 | 响应 | 条件 |
 |------|------|
 | `{"error": "请输入关键词"}` | `q` 缺失或为空 |
+
+---
+
+## GET /api/check
+
+上传超时后**幂等核实**某篇是否已落库（只读，不写）。
+
+**参数**
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `path` | ✓ | 文档相对路径，如 `uploads/note.md` |
+
+**响应**
+
+```json
+{ "path": "uploads/note.md", "exists": true, "indexed": true, "size": 233 }
+```
+
+- `exists` = 文件在语料目录中；`indexed` = 已入索引；`size` = 索引中的字节数（未索引为 `null`）
 
 ---
 

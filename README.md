@@ -71,11 +71,18 @@ Windows 下可用 `scripts/docs-search.bat`。
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | GET  | `/api/stats` | 统计信息 `{count, updated, categories}` |
-| GET  | `/api/search?q=关键词&cat=` | 搜索（多关键词 AND） |
+| GET  | `/api/search?q=关键词&cat=&mode=and|or&limit=` | 搜索（多词默认 AND，`mode=or` 任一命中） |
 | GET  | `/api/list?cat=` | 列出文档 |
 | GET  | `/api/show?path=x.md` | 文档内容 |
+| GET  | `/api/check?path=x.md` | 幂等核实某篇是否落库（上传超时后确认） |
 | POST | `/api/upload?filename=x.md` | 上传文档（raw body = UTF-8 文本） |
 | POST | `/api/delete?path=uploads/x.md` | 删除 `uploads/` 下已上传文档 |
+
+搜索响应带 `total`（全量命中数）、`returned`（本次条数）、`truncated`（是否被 `limit` 截断）、
+`limit` / `limit_capped`（上限是否压回）、`mode`、`relaxed`（是否走 CJK 二元组退化召回）；
+调用方据此区分「结果被截断」与「内容没收录」。单次返回上限默认 50，可用环境变量
+`DOCS_SEARCH_MAX_SEARCH_LIMIT` 调整；上传速率可用 `DOCS_SEARCH_UPLOAD_RATE`
+（每 IP 每分钟次数，未设=不限，超限 429）限制。
 
 上传示例：
 

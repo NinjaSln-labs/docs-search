@@ -13,11 +13,13 @@
 上传同名策略（if_exists）: error（默认，重名提示）> overwrite（强制覆盖）> keep（生成 -N 新文件）
 """
 
+import contextlib
 import hashlib
 import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +32,9 @@ DEFAULT_DOCS_DIRNAME = "docs"
 # 上传同名冲突策略（error=默认提示 / overwrite=覆盖 / keep=生成 -N 新文件）
 IF_EXISTS_CHOICES = ("error", "overwrite", "keep")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 上传体积上限 10MB
+INDEX_CHECK_TTL = 30.0  # 秒：目录指纹复核的最小间隔（避免每次请求全目录 stat）
+REBUILD_RETRY = 3       # 索引库被占用时的重试次数
+REBUILD_BACKOFF = 0.2   # 重试退避基数（秒，按 2 的幂递增）
 
 
 def win_utf8():
@@ -192,6 +197,84 @@ def files_hash(entries):
     return h.hexdigest()[:16]
 
 
+def files_map(entries):
+    """(rel, size, mtime, cat) 列表 → {rel: [mtime, size]}（与 files_hash 同序同格式）"""
+    return {rel: [int(mtime), int(size)] for rel, size, mtime, _cat in entries}
+
+
+def map_hash(fmap):
+    """按已知的 {rel: [mtime, size]} 计算目录指纹——不做 stat，仅哈希（O(N) 字符串、零系统调用）。
+    与 files_hash(scan_meta(...)) 同值，故可直接与 meta["hash"] 比较。"""
+    h = hashlib.sha256()
+    for rel in sorted(fmap):
+        mtime, size = fmap[rel]
+        h.update(f"{rel}:{mtime}:{size}".encode())
+    return h.hexdigest()[:16]
+
+
+_INDEX_LOCKS = {}  # db_path -> 进程内互斥锁（序列化同一库的索引写）
+_INDEX_LOCKS_GUARD = threading.Lock()
+
+
+def _index_lock(db_path):
+    """取某库的进程内互斥锁（可重入：增量更新回落到全量重建时不会自锁）。
+    作用：上传/删除与重建并发时不再互相撞 SQLite 锁。"""
+    key = str(db_path)
+    with _INDEX_LOCKS_GUARD:
+        lock = _INDEX_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _INDEX_LOCKS[key] = lock
+        return lock
+
+
+@contextlib.contextmanager
+def _rebuild_file_lock(db_path, timeout=60.0):
+    """跨进程重建互斥（POSIX 用 fcntl.flock；Windows 退化为原子创建锁文件）。
+    超时抛 RuntimeError——不再无限等待，也不直接暴露 SQLite 的「库被占用」。"""
+    lock_path = db_path.with_name(db_path.name + ".rebuild.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.time() + timeout
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+    if fcntl is not None:
+        handle = open(lock_path, "a+", encoding="utf-8")  # noqa: SIM115 -- 句柄需跨越 yield 持有
+        try:
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError:
+                    if time.time() >= deadline:
+                        raise RuntimeError("索引重建等待超时（另一个进程正在重建索引）")
+                    time.sleep(0.05)
+            yield
+        finally:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
+        return
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            if time.time() >= deadline:
+                raise RuntimeError("索引重建等待超时（另一个进程正在重建索引）")
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+
+
 def build_db(db_path):
     """重建数据库表（幂等：DROP IF EXISTS，不依赖删除文件，DB 被占用时也能重建）"""
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,68 +315,112 @@ def need_reindex(meta, db_path, docs_dir):
 
 
 def rebuild_index(docs_dir, db_path):
-    """全量重建索引，返回 (文档数, 耗时ms)。DB 被占用时抛出带提示的 RuntimeError"""
+    """全量重建索引，返回 (文档数, 耗时ms)。
+    跨进程互斥 + 库被占用时退避重试：并发上传/重建不再直接抛「索引库被占用」。"""
     t0 = time.time()
-    try:
-        files = scan_docs(docs_dir)
-        c = build_db(db_path)
-        c.executemany("INSERT INTO docs VALUES(?,?,?,?,?,?)", files)
-        c.commit()
-        c.close()
-    except sqlite3.OperationalError as e:
-        raise RuntimeError(f"索引库被占用，无法重建（是否有其他 docs-search 进程正在使用？）: {e}") from e
+    with _index_lock(db_path), _rebuild_file_lock(db_path):
+        last_error = None
+        files = []
+        for attempt in range(REBUILD_RETRY):
+            c = None
+            try:
+                files = scan_docs(docs_dir)
+                c = build_db(db_path)
+                c.executemany("INSERT INTO docs VALUES(?,?,?,?,?,?)", files)
+                c.commit()
+                c.close()
+                c = None
+                break
+            except sqlite3.OperationalError as e:
+                last_error = e
+                if c is not None:
+                    try:
+                        c.close()
+                    except sqlite3.Error:
+                        pass
+                if attempt < REBUILD_RETRY - 1:
+                    time.sleep(REBUILD_BACKOFF * (2 ** attempt))
+        else:
+            raise RuntimeError(
+                f"索引库被占用，无法重建（是否有其他 docs-search 进程正在使用？）: {last_error}"
+            ) from last_error
+    entries = scan_meta(docs_dir)
     meta = {
-        "hash": files_hash(scan_meta(docs_dir)),
+        "hash": files_hash(entries),
+        "files": files_map(entries),
         "count": len(files),
         "updated": datetime.now().astimezone().isoformat(),
+        "checked": time.time(),
     }
     save_meta(db_path, meta)
     return len(files), (time.time() - t0) * 1000
 
 
 def ensure_index(docs_dir, db_path):
-    """确保索引存在且最新，返回 (文档数, 是否发生重建)"""
+    """确保索引存在且最新，返回 (文档数, 是否发生重建)。
+    目录指纹复核按 TTL 节流（默认 30s）：高频请求不再每次全目录 stat；
+    复核到指纹变化才重建（重建带互斥与退避重试，不因并发而直接失败）。"""
     meta = load_meta(db_path)
-    if need_reindex(meta, db_path, docs_dir):
+    if not meta or not db_path.exists() or "files" not in meta:
+        # 无元数据 / 库文件丢失 / 旧版元数据（无 files 映射）→ 重建一次并补齐 files
         n, _ = rebuild_index(docs_dir, db_path)
         return n, True
-    return meta.get("count", 0), False
+    checked = float(meta.get("checked") or 0)
+    if time.time() - checked >= INDEX_CHECK_TTL:
+        if files_hash(scan_meta(docs_dir)) != meta.get("hash", ""):
+            n, _ = rebuild_index(docs_dir, db_path)
+            return n, True
+        meta = dict(meta)
+        meta["checked"] = time.time()
+        save_meta(db_path, meta)
+    return int(meta.get("count", 0)), False
 
 
 def update_index_entry(docs_dir, db_path, rel):
     """增量更新单篇文档的索引行并刷新目录指纹——上传/删除后调用，避免全量重建。
+    目录指纹由已知的 {rel: [mtime, size]} 映射重算（不再全目录 stat），
+    批量上传的指纹开销降为 O(N) 哈希、零系统调用。
     返回 (文档数, 是否走了全量重建)。索引缺失/表不存在时退化为全量重建。"""
     meta = load_meta(db_path)
-    if not db_path.exists() or not meta or not _has_docs_table(db_path):
+    if not db_path.exists() or not meta or not _has_docs_table(db_path) or "files" not in meta:
         n, _ = rebuild_index(docs_dir, db_path)
         return n, True
-    try:
-        c = get_conn(db_path)
-    except sqlite3.OperationalError:
-        n, _ = rebuild_index(docs_dir, db_path)
-        return n, True
-    try:
-        row = doc_entry(docs_dir, rel)
-        if row is None:
-            c.execute("DELETE FROM docs WHERE path=?", (rel,))
-        else:
-            c.execute("INSERT OR REPLACE INTO docs VALUES(?,?,?,?,?,?)", row)
-        c.commit()
-        n = c.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
-    except sqlite3.OperationalError:
-        c.close()
-        n, _ = rebuild_index(docs_dir, db_path)
-        return n, True
-    finally:
+    with _index_lock(db_path):
         try:
+            c = get_conn(db_path)
+        except sqlite3.OperationalError:
+            n, _ = rebuild_index(docs_dir, db_path)
+            return n, True
+        row = None
+        try:
+            row = doc_entry(docs_dir, rel)
+            if row is None:
+                c.execute("DELETE FROM docs WHERE path=?", (rel,))
+            else:
+                c.execute("INSERT OR REPLACE INTO docs VALUES(?,?,?,?,?,?)", row)
+            c.commit()
+            n = c.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+        except sqlite3.OperationalError:
             c.close()
-        except sqlite3.Error:  # 已关闭时忽略
-            pass
-    meta = dict(meta)
-    meta["hash"] = files_hash(scan_meta(docs_dir))
-    meta["count"] = n
-    meta["updated"] = datetime.now().astimezone().isoformat()
-    save_meta(db_path, meta)
+            n, _ = rebuild_index(docs_dir, db_path)
+            return n, True
+        finally:
+            try:
+                c.close()
+            except sqlite3.Error:  # 已关闭时忽略
+                pass
+        fmap = {k: list(v) for k, v in (meta.get("files") or {}).items()}
+        if row is None:
+            fmap.pop(rel, None)
+        else:
+            fmap[rel] = [int(row[5]), int(row[4])]
+        meta = dict(meta)
+        meta["files"] = fmap
+        meta["hash"] = map_hash(fmap)
+        meta["count"] = n
+        meta["updated"] = datetime.now().astimezone().isoformat()
+        meta["checked"] = time.time()
+        save_meta(db_path, meta)
     return n, False
 
 
@@ -319,6 +446,56 @@ SNIPPET_LEN = 150       # 兜底/尾部信号摘要长度
 SNIPPET_WINDOW = 200    # 命中点居中窗口长度
 LOCATE_BODY_CAP = 5120  # 摘要定位仅在前 5KB body 内做（大文档成本控制）
 MAX_SEARCH_LIMIT = 50   # web /api/search 单次返回上限（MCP 工具侧另有 20 上限，见 mcp.py）
+ENV_MAX_SEARCH_LIMIT = "DOCS_SEARCH_MAX_SEARCH_LIMIT"  # 环境变量覆盖单次返回上限
+MATCH_MODES = ("and", "or")  # 关键词组合语义：and=全部命中 / or=任一命中
+
+
+def resolve_max_search_limit(default=MAX_SEARCH_LIMIT):
+    """单次搜索返回上限：环境变量 > 默认值（非法或非正数时回落默认）"""
+    raw = (os.environ.get(ENV_MAX_SEARCH_LIMIT) or "").strip()
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            return default
+        if value >= 1:
+            return value
+    return default
+
+
+def _is_cjk_char(ch):
+    """是否 CJK 汉字（基本区 / 扩展 A / 兼容区 / 扩展 B+）"""
+    code = ord(ch)
+    return (
+        0x4E00 <= code <= 0x9FFF
+        or 0x3400 <= code <= 0x4DBF
+        or 0xF900 <= code <= 0xFAFF
+        or 0x20000 <= code <= 0x2FA1F
+    )
+
+
+def _has_cjk(text):
+    return any(_is_cjk_char(ch) for ch in text)
+
+
+def _bigrams(token):
+    """CJK 词的二元组切分（整串未出现时的子串退化召回用）"""
+    return [token[i:i + 2] for i in range(len(token) - 1)]
+
+
+def _query_groups(query):
+    """按空白切词 → 候选关键词组。
+    返回 (strict, relaxed)：strict 每组只有原词；relaxed 对 CJK 长词追加二元组
+    （原词整串未出现时，仍能按子串召回；非 CJK 词不变）。"""
+    tokens = [k for k in query.split() if k]
+    strict = [[t] for t in tokens]
+    relaxed = []
+    for token in tokens:
+        alts = [token]
+        if _has_cjk(token) and len(token) >= 3:
+            alts.extend(_bigrams(token))
+        relaxed.append(alts)
+    return strict, relaxed
 
 
 def round_robin_merge(by_key):
@@ -403,43 +580,96 @@ def _locate_snippet(title, body, kws):
     return "…" + body[-SNIPPET_LEN:].replace("\n", " "), 0
 
 
-def search_ex(docs_dir, db_path, query, cat=None, limit=20):
-    """单库搜索（agent 友好），返回 {"results": [...], "total": int}。
+def _run_search_query(db_path, groups, op, limit, cat=None):
+    """执行一次检索：单条 SQL 完成匹配/计数/排序，返回 (rows, total)。
+    op="AND"：所有关键词组都要命中；op="OR"：任一组命中即可（按命中组数降序）。
+    参数用命名占位符（同名可复用），避免为排序表达式重复绑定同一关键词。"""
+    conditions, params, title_exprs = [], {}, []
+    for gi, alts in enumerate(groups):
+        parts = []
+        for ai, alt in enumerate(alts):
+            like_name = f"g{gi}_{ai}"
+            instr_name = f"t{gi}_{ai}"
+            parts.append(f"(title LIKE :{like_name} OR body LIKE :{like_name})")
+            params[like_name] = f"%{alt}%"
+            params[instr_name] = alt
+            title_exprs.append(f"(instr(lower(title), lower(:{instr_name})) > 0)")
+        conditions.append("(" + " OR ".join(parts) + ")")
+    where = f" {op} ".join(conditions)
+    order = []
+    if op == "OR":
+        order.append("(" + " + ".join(f"(CASE WHEN {c} THEN 1 ELSE 0 END)" for c in conditions) + ") DESC")
+    order.append("(" + " + ".join(title_exprs) + ") DESC")
+    order.append("path ASC")
+    sql = "SELECT path, cat, title, body, COUNT(*) OVER() AS total FROM docs WHERE " + where
+    if cat:
+        sql += " AND cat = :cat"
+        params["cat"] = cat
+    sql += " ORDER BY " + ", ".join(order) + " LIMIT :limit"
+    params["limit"] = limit
+    c = get_conn(db_path)
+    try:
+        rows = c.execute(sql, params).fetchall()
+    finally:
+        c.close()
+    total = rows[0][4] if rows else 0
+    return rows, total
+
+
+def search_ex(docs_dir, db_path, query, cat=None, limit=20, mode="and"):
+    """单库搜索（agent 友好），返回
+    {"results": [...], "total": int, "returned": int, "truncated": bool,
+      "mode": str, "relaxed": bool}。
+
+    关键词语义（空格切词）：
+    - mode="and"（默认）：所有词都要命中（AND）。严格 AND 0 命中时，对 CJK 长词做
+      二元组退化重试——整串未出现也能按子串召回（严格 AND 有命中时条数与排序不变，
+      向后兼容）；退化只在严格 0 命中时发生，响应用 relaxed=true 标注。
+    - mode="or"：任一词命中即可，按命中组数降序、标题命中数降序、路径升序。
 
     单条 SQL 完成匹配/计数/排序，无候选池、无二次 COUNT 查询：
     - total = LIKE 全量命中数（COUNT(*) OVER() 先于 LIMIT 求值），无命中时为 0；
     - 排序在 SQL 内：title 命中关键词个数降序（instr/lower 与 LIKE 同为 ASCII 折叠），
       path 升序兜底确定性；
-    - lower(?) 写进 SQL、关键词原样绑定——Python 侧 str.lower() 是全 Unicode 折叠，
+    - lower(...) 写进 SQL、关键词原样绑定——Python 侧 str.lower() 是全 Unicode 折叠，
       会与 SQLite ASCII 折叠错位，不能在 Python 预折。
     results 元素：path/cat/title/snippet/line（line=0 表示行号不可定位）。
     """
-    kws = [k for k in query.split() if k]
-    if not kws:  # 防御：调用方已挡空串，core 层兜底避免拼出空 WHERE
-        return {"results": [], "total": 0}
+    strict, relaxed_groups = _query_groups(query)
+    if not strict:  # 防御：调用方已挡空串，core 层兜底避免拼出空 WHERE
+        return {"results": [], "total": 0, "returned": 0, "truncated": False,
+                "mode": mode or "and", "relaxed": False}
+    mode = (mode or "and").lower()
+    if mode not in MATCH_MODES:
+        mode = "and"
     ensure_index(docs_dir, db_path)
-    c = get_conn(db_path)
-    conditions, where_args = [], []
-    for kw in kws:
-        conditions.append("(title LIKE ? OR body LIKE ?)")
-        where_args.extend([f"%{kw}%", f"%{kw}%"])
-    title_hits = " + ".join(["(instr(lower(title), lower(?)) > 0)"] * len(kws))
-    sql = f"SELECT path, cat, title, body, COUNT(*) OVER() AS total FROM docs WHERE {' AND '.join(conditions)}"
-    qargs = list(where_args)
-    if cat:
-        sql += " AND cat = ?"
-        qargs.append(cat)
-    sql += f" ORDER BY ({title_hits}) DESC, path ASC LIMIT ?"
-    qargs.extend(kws)
-    qargs.append(limit)
-    rows = c.execute(sql, qargs).fetchall()
-    c.close()
-    total = rows[0][4] if rows else 0
+    # 默认：严格 AND →（0 命中时）CJK 二元组退化 AND；mode=or：直接 OR 召回
+    plan = [("OR", relaxed_groups)] if mode == "or" else [("AND", strict), ("AND", relaxed_groups)]
+    rows, total, used_groups, relaxed = [], 0, plan[0][1], False
+    for op, groups in plan:
+        rows, total = _run_search_query(db_path, groups, op, limit, cat)
+        used_groups = groups
+        if total > 0:
+            break
+    # relaxed 仅在真的用了 CJK 二元组退化时为真（非 CJK 查询的退化与严格等价）
+    relaxed = (
+        mode == "and"
+        and used_groups is not strict
+        and any(len(group) > 1 for group in used_groups)
+    )
+    kws = [alt for group in used_groups for alt in group]
     results = []
     for p, catv, t, b, _total in rows:
         snippet, line = _locate_snippet(t, b, kws)
         results.append({"path": p, "cat": catv, "title": t, "snippet": snippet, "line": line})
-    return {"results": results, "total": total}
+    return {
+        "results": results,
+        "total": total,
+        "returned": len(results),
+        "truncated": total > len(results),
+        "mode": mode,
+        "relaxed": relaxed,
+    }
 
 
 def search_lib(docs_dir, db_path, query, cat=None, limit=20):

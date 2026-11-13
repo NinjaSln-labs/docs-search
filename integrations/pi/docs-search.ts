@@ -24,8 +24,14 @@ import { Type } from "typebox";
 const PROTOCOL_VERSION = "2024-11-05";
 
 const SearchParams = Type.Object({
-	query: Type.String({ description: "Keywords, space-separated (AND semantics; CJK supported)" }),
+	query: Type.String({ description: "Keywords, space-separated (AND by default; CJK supported)" }),
 	limit: Type.Optional(Type.Number({ description: "Max results (default 8, cap 20)" })),
+	mode: Type.Optional(
+		Type.String({
+			enum: ["and", "or"],
+			description: "Keyword combination: and=all keywords must match (default), or=any keyword matches",
+		}),
+	),
 	cat: Type.Optional(Type.String({ description: "Category filter (top-level folder name)" })),
 });
 
