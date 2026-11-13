@@ -56,6 +56,7 @@ from .core import (
     round_robin_merge,
     sanitize_filename,
     search_ex,
+    update_index_entry,
     win_utf8,
 )
 
@@ -539,7 +540,9 @@ def make_handler(docs_dir, db_path, auth=None):
                 self._json(409, {"error": msg})  # 同名冲突（默认策略）
                 return
             target.write_bytes(body)
-            n, _ = ensure_index(docs_dir, db_path)
+            # 增量更新索引：只重算这一篇 + 刷新目录指纹，避免每次上传全量重建
+            # （全量重建使批量同步退化为 O(N²)——N 篇上传触发 N 次全库重建）
+            n, _ = update_index_entry(docs_dir, db_path, f"uploads/{target.name}")
             self._json(200, {"ok": True, "path": f"uploads/{target.name}", "count": n})
 
         def _api_delete(self, params):
@@ -561,7 +564,7 @@ def make_handler(docs_dir, db_path, auth=None):
             except OSError as e:
                 self._json(500, {"error": f"删除失败: {e}"})
                 return
-            n, _ = ensure_index(docs_dir, db_path)
+            n, _ = update_index_entry(docs_dir, db_path, rel)
             self._json(200, {"ok": True, "deleted": rel, "count": n})
 
         # ---------- 输出 ----------

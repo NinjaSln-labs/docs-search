@@ -165,6 +165,25 @@ def scan_docs(docs_dir):
     return out
 
 
+def doc_entry(docs_dir, rel):
+    """单篇文档的索引行 (rel, cat, title, body, size, mtime)。
+    文件不存在/不可读返回 None（删除场景用）。rel 为相对文档根的 POSIX 路径。"""
+    p = Path(docs_dir) / rel
+    try:
+        txt = p.read_text(encoding="utf-8")
+        st = p.stat()
+    except (OSError, UnicodeDecodeError):
+        return None
+    lines = txt.split("\n")
+    title = next((l[2:].strip() for l in lines if l.startswith("# ")), p.name)
+    bs = next(
+        (i for i, l in enumerate(lines) if l and not l.startswith("#") and not l.startswith(">")),
+        len(lines),
+    )
+    body = "\n".join(lines[bs:]).strip()
+    return (rel, rel.split("/")[0], title, body, st.st_size, int(st.st_mtime))
+
+
 def files_hash(entries):
     """按 (rel, mtime, size) 计算目录指纹，不读内容"""
     h = hashlib.sha256()
@@ -239,6 +258,58 @@ def ensure_index(docs_dir, db_path):
         n, _ = rebuild_index(docs_dir, db_path)
         return n, True
     return meta.get("count", 0), False
+
+
+def update_index_entry(docs_dir, db_path, rel):
+    """增量更新单篇文档的索引行并刷新目录指纹——上传/删除后调用，避免全量重建。
+    返回 (文档数, 是否走了全量重建)。索引缺失/表不存在时退化为全量重建。"""
+    meta = load_meta(db_path)
+    if not db_path.exists() or not meta or not _has_docs_table(db_path):
+        n, _ = rebuild_index(docs_dir, db_path)
+        return n, True
+    try:
+        c = get_conn(db_path)
+    except sqlite3.OperationalError:
+        n, _ = rebuild_index(docs_dir, db_path)
+        return n, True
+    try:
+        row = doc_entry(docs_dir, rel)
+        if row is None:
+            c.execute("DELETE FROM docs WHERE path=?", (rel,))
+        else:
+            c.execute("INSERT OR REPLACE INTO docs VALUES(?,?,?,?,?,?)", row)
+        c.commit()
+        n = c.execute("SELECT COUNT(*) FROM docs").fetchone()[0]
+    except sqlite3.OperationalError:
+        c.close()
+        n, _ = rebuild_index(docs_dir, db_path)
+        return n, True
+    finally:
+        try:
+            c.close()
+        except sqlite3.Error:  # 已关闭时忽略
+            pass
+    meta = dict(meta)
+    meta["hash"] = files_hash(scan_meta(docs_dir))
+    meta["count"] = n
+    meta["updated"] = datetime.now().astimezone().isoformat()
+    save_meta(db_path, meta)
+    return n, False
+
+
+def _has_docs_table(db_path):
+    """索引库里是否已有 docs 表（增量更新的前置条件）"""
+    try:
+        c = get_conn(db_path)
+    except sqlite3.Error:  # 库不可用时按无表处理
+        return False
+    try:
+        row = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='docs'"
+        ).fetchone()
+        return row is not None
+    finally:
+        c.close()
 
 
 # ============================================================

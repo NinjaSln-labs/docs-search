@@ -2,6 +2,20 @@
 
 本文件记录所有对外可见的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
 
+## [1.6.1] — 2026-11-13
+
+### Fixed
+
+- **上传/删除改为增量更新索引，不再每次全量重建**（`core.py` 新增 `doc_entry` / `update_index_entry`，
+  `web.py` 的 `/api/upload`、`/api/delete` 改调增量路径）：
+  此前每次上传都触发 `ensure_index` → `rebuild_index`，全库重扫 + `DROP TABLE` + 全量重插；
+  N 篇批量同步 ⇒ N 次全库重建（O(N²)）。实测远端 955 篇库单次上传 ≈0.3s、批量 954 篇同步 ≈308s，
+  且每次重建重复写入整库（累计 ~10GB 写入），在 2 vCPU / 1.6GB 内存的 ECS 上造成 IO 抖动，
+  个别请求可超出客户端 30s 超时（表现为 `urlopen error timed out`）。
+  改为只重算被改动的那一篇 + 刷新目录指纹（仅 stat，不读内容）后，
+  同规模实测单次上传中位 15ms（本地 954 篇库），批量同步耗时降一个数量级。
+- 索引缺失/`docs` 表不存在时增量路径自动退化为全量重建，行为与旧版一致。
+
 ## [1.6.0] — 2026-10-27
 
 ### Added

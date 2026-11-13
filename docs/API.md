@@ -189,7 +189,7 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=session-note.md' \
 { "ok": true, "path": "uploads/session-note.md", "count": 136 }
 ```
 
-`path` 是落盘后的真实相对路径（重名 keep 时带序号），后续删除/检索以它为准。上传即重建索引，立即可搜。
+`path` 是落盘后的真实相对路径（重名 keep 时带序号），后续删除/检索以它为准。上传后只对该篇做增量索引更新（不再全量重建），立即可搜。
 
 **错误**
 
@@ -217,7 +217,7 @@ curl -X POST 'http://127.0.0.1:8765/api/upload?filename=session-note.md' \
 **安全行为**
 
 - 路径穿越检查：解析后的真实路径必须位于 `uploads/` 之内，否则 403（无论文件是否存在，避免探测）
-- 删除成功后立即增量重建索引
+- 删除成功后立即增量更新该篇索引
 
 **成功响应**
 

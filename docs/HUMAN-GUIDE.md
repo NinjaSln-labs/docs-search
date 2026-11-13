@@ -146,7 +146,7 @@ docs-search upload ~/Downloads/new-note.md --dir ~/my-notes
 # reindexed 136 docs in 45ms
 ```
 
-复制到文档库的 `uploads/` 子目录并重建索引。限制：仅 `.md`、单文件 ≤ 10MB。
+复制到文档库的 `uploads/` 子目录并增量更新该篇索引（不触发全量重建）。限制：仅 `.md`、单文件 ≤ 10MB。
 同名冲突策略由 `--if-exists` 决定：默认 `error`（提示重名，不写不覆盖）、`overwrite`（强制覆盖）、`keep`（生成 `-1`/`-2` 新文件）。
 可选 `--workspace <name>`：写到自包含工作空间库（`~/.docs-search/workspaces/<ws>/`），不填 = 默认库。
 

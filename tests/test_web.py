@@ -262,6 +262,38 @@ class TestWebAPI:
         hits = get(base, "/api/search?q=UPLOADED_MARKER")
         assert hits["results"][0]["path"] == "uploads/note.md"
 
+    def test_upload_updates_index_incrementally(self, server, tmp_path):
+        """上传只增量更新该篇索引（不再全量重建）——批量同步否则退化为 O(N²)"""
+        from docs_search import core
+
+        base, docs = server
+        calls = []
+        orig = core.rebuild_index
+
+        def counting_rebuild(d, db):
+            calls.append((d, db))
+            return orig(d, db)
+
+        core.rebuild_index = counting_rebuild
+        try:
+            get(base, "/api/stats")  # 先建索引（首次必然全量重建）
+            calls.clear()
+            post(base, "/api/upload?filename=note.md", "# Note\n\nMARKER", raw=True)
+        finally:
+            core.rebuild_index = orig
+        assert calls == []  # 索引已存在时不应触发全量重建
+        # 指纹已刷新 → 后续读取不再判定为“需重建”
+        n, rebuilt = core.ensure_index(docs, tmp_path / "idx.db")
+        assert rebuilt is False and n == 2
+
+    def test_upload_content_visible_without_rebuild(self, server):
+        """覆盖上传后内容立即可检索（增量行替换生效）"""
+        base, _ = server
+        post(base, "/api/upload?filename=note.md&if_exists=overwrite", "FIRST_MARKER", raw=True)
+        post(base, "/api/upload?filename=note.md&if_exists=overwrite", "SECOND_MARKER", raw=True)
+        assert get(base, "/api/search?q=SECOND_MARKER")["total"] == 1
+        assert get(base, "/api/search?q=FIRST_MARKER")["total"] == 0
+
     def test_upload_dedupe(self, server):
         base, docs = server
         post(base, "/api/upload?filename=note.md", "one", raw=True)
